@@ -1,0 +1,13 @@
+[SETTINGS]
+LOW_PC=TRUE
+GRUB_TIMEOUT=0
+
+[INSTALL]
+plasma-desktop
+sddm
+xorg
+konsole
+dolphin
+htop
+vlc
+# Tady si dopiš co dalšího chceš
