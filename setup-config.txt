@@ -3,6 +3,7 @@ LOW_PC=TRUE
 GRUB_TIMEOUT=0
 AUTOLOGIN=FALSE
 RELOGIN=FALSE # Přihlásit okamžitě po odhlášení
+CONFIRM_LOGOUT=FALSE # Vypne ten otravnej dialog při vypínání/restartu
 
 [INSTALL]
 BROWSER_URL=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb

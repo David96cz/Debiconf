@@ -7,17 +7,15 @@ apt install -y sudo
 usermod -aG sudo $REAL_USER
 
 # --- 2. NAČTENÍ KONFIGURACE Z TEXTÁKU ---
-# Vytáhne balíčky, ale chytře ignoruje nadpisy, komentáře a proměnné s rovnítkem
 PACKAGES=$(sed -n '/^\[INSTALL\]/,/^\[/p' setup-config.txt | grep -v '\[.*\]' | grep -v '^#' | grep -v '=' | xargs)
 
-LOW_PC=$(grep "^LOW_PC=" setup-config.txt | cut -d'=' -f2 | tr '[:lower:]' '[:upper:]')
-TIMEOUT=$(grep "^GRUB_TIMEOUT=" setup-config.txt | cut -d'=' -f2)
-# -f2- zajistí, že se URL neustřihne, kdyby náhodou obsahovala další rovnítka
-BROWSER_URL=$(grep "^BROWSER_URL=" setup-config.txt | cut -d'=' -f2-)
+LOW_PC=$(grep -i "^LOW_PC=" setup-config.txt | cut -d'=' -f2 | tr '[:lower:]' '[:upper:]')
+TIMEOUT=$(grep -i "^GRUB_TIMEOUT=" setup-config.txt | cut -d'=' -f2)
+BROWSER_URL=$(grep -i "^BROWSER_URL=" setup-config.txt | cut -d'=' -f2-)
 
-# Ošetření SDDM proměnných (převod na velká písmena pro bezpečné porovnání)
 AUTOLOGIN=$(grep -i "^AUTOLOGIN=" setup-config.txt | cut -d'=' -f2 | tr '[:lower:]' '[:upper:]')
-RELOGIN=$(grep -i "^RELOGIN=" setup-config.txt | cut -d'=' -f2 | tr '[:lower:]' '[:upper:]')
+RELOGIN=$(grep -i "^RELOGIN=" setup-config.txt | cut -d'=' -f2 | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]') # cut odstraní případný komentář
+CONFIRM_LOGOUT=$(grep -i "^CONFIRM_LOGOUT=" setup-config.txt | cut -d'=' -f2 | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]')
 
 # --- 3. INSTALACE VŠEHO BALASTU ---
 echo "Instaluji systémové balíky: $PACKAGES"
@@ -54,14 +52,21 @@ fi
 echo "Mažu starou síť z interfaces, ať to sežere NetworkManager v Plasmě..."
 echo -e "auto lo\niface lo inet loopback" > /etc/network/interfaces
 
-# --- 7. LOW PC OPTIMALIZACE ---
+# --- 7. ÚPRAVY PLASMY PRO UŽIVATELE (Ořezání a Vypínání) ---
+echo "Aplikuji uživatelská nastavení Plasmy pro $REAL_USER..."
+
 if [ "$LOW_PC" == "TRUE" ]; then
-    echo "Aplikuji hardcore ořezání Plasmy pro $REAL_USER..."
+    echo "Aplikuji hardcore ořezání Plasmy..."
     su - $REAL_USER -c "kwriteconfig6 --file baloofilerc --group 'Basic Settings' --key 'Indexing-Enabled' false"
     su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Plugins --key blurEnabled false"
     su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Plugins --key kwin4_effect_shadowEnabled false"
     su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Plugins --key kwin4_effect_translucencyEnabled false"
     su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Compositing --key Enabled false"
+fi
+
+if [ "$CONFIRM_LOGOUT" == "FALSE" ]; then
+    echo "Vypínám potvrzovací dialog při odhlášení/restartu..."
+    su - $REAL_USER -c "kwriteconfig6 --file ksmserverrc --group General --key confirmLogout false"
 fi
 
 # --- 8. GRUB A REBOOT ---
