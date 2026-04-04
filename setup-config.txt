@@ -1,13 +1,19 @@
 [SETTINGS]
 LOW_PC=TRUE
 GRUB_TIMEOUT=0
+AUTOLOGIN=FALSE
+RELOGIN=FALSE # Přihlásit okamžitě po odhlášení
 
 [INSTALL]
+BROWSER_URL=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 plasma-desktop
 sddm
 xorg
 konsole
 dolphin
+network-manager
+plasma-nm
+wget
 htop
 vlc
 # Tady si dopiš co dalšího chceš

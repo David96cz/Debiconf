@@ -1,41 +1,73 @@
 #!/bin/bash
 
 # --- 1. DETEKCE UŽIVATELE A SUDO PRÁVA ---
-# Vytáhne první složku v /home, což je stoprocentně ten tvůj uživatel
 REAL_USER=$(ls /home | head -n 1)
 echo "Našel jsem složku uživatele: $REAL_USER. Dávám mu sudo práva..."
 apt install -y sudo
 usermod -aG sudo $REAL_USER
 
 # --- 2. NAČTENÍ KONFIGURACE Z TEXTÁKU ---
-PACKAGES=$(sed -n '/^\[INSTALL\]/,/^\[/p' setup-config.txt | grep -v '\[.*\]' | xargs)
-LOW_PC=$(grep "LOW_PC" setup-config.txt | cut -d'=' -f2)
-TIMEOUT=$(grep "GRUB_TIMEOUT" setup-config.txt | cut -d'=' -f2)
+# Vytáhne balíčky, ale chytře ignoruje nadpisy, komentáře a proměnné s rovnítkem
+PACKAGES=$(sed -n '/^\[INSTALL\]/,/^\[/p' setup-config.txt | grep -v '\[.*\]' | grep -v '^#' | grep -v '=' | xargs)
+
+LOW_PC=$(grep "^LOW_PC=" setup-config.txt | cut -d'=' -f2 | tr '[:lower:]' '[:upper:]')
+TIMEOUT=$(grep "^GRUB_TIMEOUT=" setup-config.txt | cut -d'=' -f2)
+# -f2- zajistí, že se URL neustřihne, kdyby náhodou obsahovala další rovnítka
+BROWSER_URL=$(grep "^BROWSER_URL=" setup-config.txt | cut -d'=' -f2-)
+
+# Ošetření SDDM proměnných (převod na velká písmena pro bezpečné porovnání)
+AUTOLOGIN=$(grep -i "^AUTOLOGIN=" setup-config.txt | cut -d'=' -f2 | tr '[:lower:]' '[:upper:]')
+RELOGIN=$(grep -i "^RELOGIN=" setup-config.txt | cut -d'=' -f2 | tr '[:lower:]' '[:upper:]')
 
 # --- 3. INSTALACE VŠEHO BALASTU ---
-echo "Instaluji systém: $PACKAGES"
+echo "Instaluji systémové balíky: $PACKAGES"
 apt install -y $PACKAGES
 
-# --- 4. VYMRDÁNÍ SÍTĚ ---
+# --- 4. INSTALACE EXTERNÍHO PROHLÍŽEČE ---
+if [ -n "$BROWSER_URL" ]; then
+    echo "Stahuji a instaluji prohlížeč z $BROWSER_URL..."
+    wget -O /tmp/browser.deb "$BROWSER_URL"
+    apt install -y /tmp/browser.deb
+    rm /tmp/browser.deb
+else
+    echo "BROWSER_URL je prázdné, instalaci prohlížeče přeskakuji."
+fi
+
+# --- 5. KONFIGURACE SDDM (PŘIHLAŠOVÁNÍ) ---
+echo "Nastavuji SDDM..."
+mkdir -p /etc/sddm.conf.d
+if [ "$AUTOLOGIN" == "TRUE" ] || [ "$RELOGIN" == "TRUE" ]; then
+    echo "[Autologin]" > /etc/sddm.conf.d/autologin.conf
+    if [ "$AUTOLOGIN" == "TRUE" ]; then
+        echo "User=$REAL_USER" >> /etc/sddm.conf.d/autologin.conf
+        echo "Session=plasma" >> /etc/sddm.conf.d/autologin.conf
+    fi
+    if [ "$RELOGIN" == "TRUE" ]; then
+        echo "Relogin=true" >> /etc/sddm.conf.d/autologin.conf
+    fi
+else
+    echo "Autologin vypnut v configu. Mažu případná stará nastavení."
+    rm -f /etc/sddm.conf.d/autologin.conf
+fi
+
+# --- 6. VYMRDÁNÍ SÍTĚ ---
 echo "Mažu starou síť z interfaces, ať to sežere NetworkManager v Plasmě..."
 echo -e "auto lo\niface lo inet loopback" > /etc/network/interfaces
 
-# --- 5. LOW PC OPTIMALIZACE (Zapsáno přímo do configů uživatele) ---
+# --- 7. LOW PC OPTIMALIZACE ---
 if [ "$LOW_PC" == "TRUE" ]; then
     echo "Aplikuji hardcore ořezání Plasmy pro $REAL_USER..."
-    # Vypnutí indexování Baloo
     su - $REAL_USER -c "kwriteconfig6 --file baloofilerc --group 'Basic Settings' --key 'Indexing-Enabled' false"
-    # Totální vypnutí efektů kompozitoru
     su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Plugins --key blurEnabled false"
     su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Plugins --key kwin4_effect_shadowEnabled false"
     su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Plugins --key kwin4_effect_translucencyEnabled false"
     su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Compositing --key Enabled false"
 fi
 
-# --- 6. GRUB A REBOOT ---
+# --- 8. GRUB A REBOOT ---
 echo "Zkracuju GRUB na $TIMEOUT sekund..."
 sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=$TIMEOUT/" /etc/default/grub
 update-grub
 
-echo "Všechno hotovo. Restartuju do čistý Plasmy!"
+echo "Všechno hotovo. Systém je ready out of the script. Restartuju!"
 reboot
