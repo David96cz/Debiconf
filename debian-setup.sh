@@ -42,17 +42,15 @@ fi
 
 # --- 4. PŘÍPRAVA CORE BALÍČKŮ PODLE DESKTOPU ---
 if [ "$DESKTOP_ENV" == "PLASMA" ]; then
-    # Odstraněn network-manager a plasma-nm
     CORE_PACKAGES="plasma-desktop sddm xorg konsole dolphin"
     SDDM_SESSION="plasma"
 elif [ "$DESKTOP_ENV" == "LXQT" ]; then
-    # Odstraněn network-manager a network-manager-gnome
-    CORE_PACKAGES="lxqt-core sddm xorg pcmanfm-qt qterminal arc-theme papirus-icon-theme"
-    SDDM_SESSION="lxqt"
+    # Změna z SDDM na LightDM. Žádný KDE závislosti se nekonají.
+    CORE_PACKAGES="lxqt-core lightdm xorg pcmanfm-qt qterminal arc-theme papirus-icon-theme"
 fi
 
 # --- 5. FILTRACE NEEXISTUJÍCÍCH BALÍKŮ ---
-echo "Filtruji neexistující balíky (ochrana proti překlepům)..."
+echo "Filtruji neexistující balíky..."
 ALL_PACKAGES="$CORE_PACKAGES $PACKAGES"
 SAFE_PACKAGES=""
 
@@ -79,24 +77,34 @@ if [ -n "$BROWSER_URL" ]; then
     wget -O /tmp/browser.deb "$BROWSER_URL"
     apt install -y /tmp/browser.deb
     rm /tmp/browser.deb
-else
-    echo "BROWSER_URL je prázdné, přeskakuji."
 fi
 
-# --- 8. KONFIGURACE SDDM (PŘIHLAŠOVÁNÍ) ---
-echo "Nastavuji SDDM..."
-mkdir -p /etc/sddm.conf.d
-if [ "$AUTOLOGIN" == "TRUE" ] || [ "$RELOGIN" == "TRUE" ]; then
-    echo "[Autologin]" > /etc/sddm.conf.d/autologin.conf
+# --- 8. KONFIGURACE PŘIHLAŠOVÁNÍ (SDDM pro Plasmu, LightDM pro LXQt) ---
+echo "Nastavuji přihlašování..."
+
+if [ "$DESKTOP_ENV" == "PLASMA" ]; then
+    mkdir -p /etc/sddm.conf.d
+    if [ "$AUTOLOGIN" == "TRUE" ] || [ "$RELOGIN" == "TRUE" ]; then
+        echo "[Autologin]" > /etc/sddm.conf.d/autologin.conf
+        if [ "$AUTOLOGIN" == "TRUE" ]; then
+            echo "User=$REAL_USER" >> /etc/sddm.conf.d/autologin.conf
+            echo "Session=$SDDM_SESSION" >> /etc/sddm.conf.d/autologin.conf
+        fi
+        if [ "$RELOGIN" == "TRUE" ]; then
+            echo "Relogin=true" >> /etc/sddm.conf.d/autologin.conf
+        fi
+    else
+        rm -f /etc/sddm.conf.d/autologin.conf
+    fi
+elif [ "$DESKTOP_ENV" == "LXQT" ]; then
     if [ "$AUTOLOGIN" == "TRUE" ]; then
-        echo "User=$REAL_USER" >> /etc/sddm.conf.d/autologin.conf
-        echo "Session=$SDDM_SESSION" >> /etc/sddm.conf.d/autologin.conf
+        mkdir -p /etc/lightdm/lightdm.conf.d
+        echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/autologin.conf
+        echo "autologin-user=$REAL_USER" >> /etc/lightdm/lightdm.conf.d/autologin.conf
+        echo "autologin-user-timeout=0" >> /etc/lightdm/lightdm.conf.d/autologin.conf
+    else
+        rm -f /etc/lightdm/lightdm.conf.d/autologin.conf
     fi
-    if [ "$RELOGIN" == "TRUE" ]; then
-        echo "Relogin=true" >> /etc/sddm.conf.d/autologin.conf
-    fi
-else
-    rm -f /etc/sddm.conf.d/autologin.conf
 fi
 
 # --- 9. VYMRDÁNÍ SÍTĚ ---
@@ -108,7 +116,6 @@ echo "Aplikuji uživatelská nastavení pro $REAL_USER..."
 
 if [ "$DESKTOP_ENV" == "PLASMA" ]; then
     if [ "$LOW_PC" == "TRUE" ]; then
-        echo "Aplikuji hardcore ořezání Plasmy..."
         su - $REAL_USER -c "kwriteconfig6 --file baloofilerc --group 'Basic Settings' --key 'Indexing-Enabled' false"
         su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Plugins --key blurEnabled false"
         su - $REAL_USER -c "kwriteconfig6 --file kwinrc --group Plugins --key kwin4_effect_shadowEnabled false"
@@ -117,7 +124,6 @@ if [ "$DESKTOP_ENV" == "PLASMA" ]; then
     fi
 
     if [ "$CONFIRM_LOGOUT" == "FALSE" ]; then
-        echo "Vypínám potvrzovací dialog při odhlášení/restartu v Plasmě..."
         su - $REAL_USER -c "kwriteconfig6 --file ksmserverrc --group General --key confirmLogout false"
     fi
 
