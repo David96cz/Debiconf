@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# DEBICONF - ČISTÝ DEBIAN S NÁSLEDNOU INSTALACÍ DESKTOP PROSTŘEDÍ
+# DEBICONF - ČISTÝ DEBIAN S DESKTOPOVÝM PROSTŘEDÍM
 # ==============================================================================
 
 if [ "$EUID" -ne 0 ]; then
@@ -23,19 +23,18 @@ GLOBAL_CONFIG="$CONTENTS_DIR/setup-config.txt"
 SHORTCUTS_SRC="$CONTENTS_DIR/lxqt/config/shortcuts.conf"
 XFWM_SRC="$CONTENTS_DIR/lxqt/config/xfwm.conf"
 
+# --- ZJIŠTĚNÍ JAZYKA PŘÍMO Z INSTALACE DEBIANU ---
+SYS_LOCALE=$(grep "^LANG=" /etc/default/locale | cut -d'=' -f2 | tr -d '"')
+[ -z "$SYS_LOCALE" ] && SYS_LOCALE="en_US.UTF-8"
+SYS_LANG_CODE="${SYS_LOCALE%%.*}" # Odřízne .UTF-8, zbyde např. cs_CZ
+echo ">> Detekován systémový jazyk instalace: $SYS_LANG_CODE"
+
 # --- 1. INTERAKTIVNÍ DOTAZY ---
 echo "--------------------------------------------------"
-echo "KONFIGURACE INSTALACE"
-echo "--------------------------------------------------"
 read -p "1) KDE Plasma | 2) LXQT (Ready out of the box): " DISTRO_ANS
-case $DISTRO_ANS in
-    1) DESKTOP_ENV="PLASMA" ;;
-    *) DESKTOP_ENV="LXQT" ;;
-esac
+[[ "$DISTRO_ANS" == "1" ]] && DESKTOP_ENV="PLASMA" || DESKTOP_ENV="LXQT"
 
-echo "--------------------------------------------------"
 read -p "Vyber prohlížeč (1-Chrome, 2-Chromium, 3-Brave, 4-Firefox, 5-Nic): " BROWSER_CHOICE
-echo "--------------------------------------------------"
 read -p "Chceš nastavit automatické přihlašování? (1=ANO, 2=NE): " AUTO_ANS
 [[ "$AUTO_ANS" == "1" ]] && { AUTOLOGIN_REQ="TRUE"; RELOGIN_REQ="TRUE"; } || { AUTOLOGIN_REQ="FALSE"; RELOGIN_REQ="FALSE"; }
 
@@ -43,7 +42,6 @@ read -p "Chceš nastavit automatické přihlašování? (1=ANO, 2=NE): " AUTO_AN
 apt update && apt install -y sudo curl wget dpkg-dev git dbus-x11 numlockx
 usermod -aG sudo $REAL_USER
 
-BOOT_LOGO=$(grep -i "^BOOT_LOGO=" "$GLOBAL_CONFIG" | cut -d'=' -f2 | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
 TIMEOUT=$(grep -i "^GRUB_TIMEOUT=" "$GLOBAL_CONFIG" | cut -d'=' -f2 | tr -d '[:space:]')
 CONFIRM_LOGOUT=$(grep -i "^CONFIRM_LOGOUT=" "$GLOBAL_CONFIG" | cut -d'=' -f2 | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
 [[ "$CONFIRM_LOGOUT" == "TRUE" ]] && CONF_OUT="true" || CONF_OUT="false"
@@ -59,7 +57,7 @@ read -r -a APPS_TO_HIDE <<< "$APPS_TO_HIDE_STR"
 
 # --- 3. INSTALACE BALÍKŮ ---
 for pkg in $ALL_PACKAGES; do
-    apt install -y --no-install-recommends "$pkg" || echo "⚠️ SELHALO: $pkg (přeskakuji)"
+    apt install -y --no-install-recommends "$pkg" || echo "⚠️ SELHALO: $pkg"
 done
 
 case $BROWSER_CHOICE in
@@ -100,19 +98,18 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
     fi
 fi
 
-# --- 5. SYSTÉMOVÉ NASTAVENÍ ---
-sed -i 's/^# cs_CZ.UTF-8 UTF-8/cs_CZ.UTF-8 UTF-8/' /etc/locale.gen
-locale-gen
-update-locale LANG=cs_CZ.UTF-8 LC_ALL=cs_CZ.UTF-8
-localectl set-locale LANG=cs_CZ.UTF-8
-
+# --- 5. SYSTÉMOVÉ NASTAVENÍ A JAZYK ---
 usermod -aG audio,pulse,pulse-access,video,plugdev $REAL_USER
 chmod +s $(which brightnessctl) 2>/dev/null
-[ ! -f "/tmp/jas_notif_id" ] || rm -f "/tmp/jas_notif_id"
+rm -f "/tmp/jas_notif_id"
 
 if ! grep -q ".local/bin" "$USER_HOME/.bashrc"; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$USER_HOME/.bashrc"
 fi
+
+# Pojištění jazyka pro LXQt (zjištěno z Debianu na začátku)
+echo "export LANG=$SYS_LOCALE" > /etc/profile.d/00-locale.sh
+echo "export LC_ALL=$SYS_LOCALE" >> /etc/profile.d/00-locale.sh
 
 mkdir -p /etc/polkit-1/rules.d
 echo 'polkit.addRule(function(action, subject) { if ((action.id == "org.freedesktop.udisks2.filesystem-mount-system" || action.id == "org.freedesktop.udisks2.filesystem-mount") && subject.isInGroup("sudo")) { return polkit.Result.YES; } });' > /etc/polkit-1/rules.d/50-udisks2-automount.rules
@@ -123,59 +120,64 @@ if [ -f "$TOUCHPAD_SRC" ]; then
     cp "$TOUCHPAD_SRC" /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
 fi
 
+# --- OPRAVA SÍTĚ (VYHLAZENÍ STARÉHO DEBIANÍHO BALASTU) ---
+    echo ">> Odstraňuji ifupdown, aby NetworkManager mohl převzít síť..."
+    apt-get purge -y ifupdown
+
+    # Vyčištění zbytků starých konfigurací, aby do toho už nic nekecalo
+    rm -rf /etc/network/interfaces.d/*
+    cat > /etc/network/interfaces << 'EOF'
+    auto lo
+    iface lo inet loopback 
+EOF
+
 # --- 6. LXQT & XFWM TWEAKY ---
 if [ "$DESKTOP_ENV" == "LXQT" ]; then
     
-    # --- A. XFWM4 (TO CO JSI CHTĚL ZPĚT!) ---
-    echo ">> Nastavuji XFWM4..."
+    # --- A. XFWM4 ---
     SESSION_CONF="$USER_HOME/.config/lxqt/session.conf"
     if [ ! -f "$SESSION_CONF" ]; then
         echo -e "[General]\nwindow_manager=xfwm4" > "$SESSION_CONF"
     else
         sed -i 's/^window_manager=.*/window_manager=xfwm4/' "$SESSION_CONF"
-        if ! grep -q "^window_manager=" "$SESSION_CONF"; then
-            sed -i '/^\[General\]/a window_manager=xfwm4' "$SESSION_CONF"
-        fi
+        grep -q "^window_manager=" "$SESSION_CONF" || sed -i '/^\[General\]/a window_manager=xfwm4' "$SESSION_CONF"
     fi
 
     if [ -f "$XFWM_SRC" ]; then
-        echo ">> Aplikuji příkazy z xfwm.conf..."
         while read -r cmd; do
             [[ "$cmd" =~ ^#.*$ || -z "$cmd" ]] && continue
             su - $REAL_USER -c "dbus-launch $cmd" 2>/dev/null
         done < "$XFWM_SRC"
-    else
-        echo ">> VAROVÁNÍ: $XFWM_SRC nenalezen!"
     fi
 
-    # --- B. LXQT.CONF (Motiv a Čeština) ---
+    # --- B. LXQT.CONF (Motiv a Dynamický Jazyk) ---
     LXQT_CONF="$USER_HOME/.config/lxqt/lxqt.conf"
     if [ -f "$LXQT_CONF" ]; then
         sed -i "s/^ask_before_logout=.*/ask_before_logout=$CONF_OUT/" "$LXQT_CONF"
-        sed -i "s/^language=.*/language=cs_CZ/" "$LXQT_CONF"
         sed -i "s/^theme=.*/theme=Lubuntu Arc/" "$LXQT_CONF"
+        
+        # Zapíše systémový jazyk detekovaný Debianem
+        if grep -q "^language=" "$LXQT_CONF"; then
+            sed -i "s/^language=.*/language=$SYS_LANG_CODE/" "$LXQT_CONF"
+        else
+            sed -i "/^\[General\]/a language=$SYS_LANG_CODE" "$LXQT_CONF"
+        fi
     fi
 
-    # --- C. ZKRATKY Z TEXŤÁKU (FIXED PARSER) ---
+    # --- C. ZKRATKY ---
     SHORTCUTS_CONF="$USER_HOME/.config/lxqt/globalkeyshortcuts.conf"
     if [ -f "$SHORTCUTS_SRC" ]; then
-        echo ">> Nahrávám zkratky z shortcuts.conf..."
         sed -i '/\.99\]/,+3d' "$SHORTCUTS_CONF" 2>/dev/null
         
         while IFS='|' read -r label shortcut cmd || [[ -n "$label" ]]; do
             [[ "$label" =~ ^#.*$ || -z "$label" ]] && continue
-            
-            # OPRAVENÉ KÓDOVÁNÍ ZKRATEK (+ -> %2B)
             safe_shortcut="${shortcut//+/%2B}"
-            
-            # Absolutní cesta pro jas
             FINAL_CMD=$(echo "$cmd" | sed "s|brightness.sh|$USER_HOME/.local/bin/brightness.sh|g")
-            
             echo -e "\n[${safe_shortcut}.99]\nComment=$label\nEnabled=true\nExec=$FINAL_CMD" >> "$SHORTCUTS_CONF"
         done < "$SHORTCUTS_SRC"
     fi
 
-    # --- D. BUSY LAUNCH & SKRÝVÁNÍ ---
+    # --- D. BUSY LAUNCH A SKRÝVÁNÍ ---
     WRAPPER_BIN="$USER_HOME/.local/bin/busy-launch.py"
     LOCAL_APPS="$USER_HOME/.local/share/applications"
     mkdir -p "$LOCAL_APPS"
@@ -209,7 +211,7 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
         fi
     fi
 
-    # --- F. QTERMINAL & KONTEXTOVÉ MENU (TVŮJ NOVÝ PARSER) ---
+    # --- F. QTERMINAL A KONTEXTOVÉ MENU ---
     Q_CONF="$USER_HOME/.config/qterminal.org/qterminal.ini"
     mkdir -p "$(dirname "$Q_CONF")"
     [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=false" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF"
@@ -218,10 +220,8 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
     ACTION_DIR="$USER_HOME/.local/share/file-manager/actions"
 
     if [ -s "$CONTEXT_CONF" ]; then
-        echo ">> Generuji akce kontextového menu z $CONTEXT_CONF..."
         mkdir -p "$ACTION_DIR"
         CURRENT_FILE=""
-
         while IFS= read -r line || [[ -n "$line" ]]; do
             if [[ "$line" =~ ^FILE:\ (.*\.desktop)$ ]]; then
                 CURRENT_FILE="${BASH_REMATCH[1]}"
@@ -235,7 +235,7 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
     chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config" "$USER_HOME/.local"
 fi
 
-# --- 7. LIGHTDM, GRUB A RESTART ---
+# --- 7. LIGHTDM A GRUB ---
 if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
     mkdir -p /etc/lightdm/lightdm.conf.d
     echo -e "[Seat:*]\nautologin-user=$REAL_USER\nautologin-user-timeout=0" > /etc/lightdm/lightdm.conf.d/autologin.conf
@@ -247,7 +247,7 @@ update-grub
 systemctl set-default graphical.target
 
 echo "=================================================="
-echo " HOTOVO."
+echo " HOTOVO"
 echo " RESTART ZA 5 SEKUND."
 echo "=================================================="
 sleep 5
