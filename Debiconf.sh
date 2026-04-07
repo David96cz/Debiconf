@@ -144,10 +144,18 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
     fi
 
     if [ -f "$XFWM_SRC" ]; then
-        while read -r cmd; do
-            [[ "$cmd" =~ ^#.*$ || -z "$cmd" ]] && continue
-            su - $REAL_USER -c "dbus-launch $cmd" 2>/dev/null
-        done < "$XFWM_SRC"
+        echo ">> Aplikuji nastavení XFWM4 (bez uvozovkového pekla)..."
+        # Vytvoření dočasného skriptu přesně s tvými příkazy
+        TMP_XFWM="/tmp/xfwm_setup.sh"
+        echo "#!/bin/bash" > "$TMP_XFWM"
+        cat "$XFWM_SRC" >> "$TMP_XFWM"
+        chmod +x "$TMP_XFWM"
+
+        # Spuštění celého souboru naráz v jedné D-Bus relaci
+        su - $REAL_USER -c "dbus-launch $TMP_XFWM" 2>/dev/null
+        
+        # Úklid
+        rm -f "$TMP_XFWM"
     fi
 
     # --- B. LXQT.CONF (Motiv a Dynamický Jazyk) ---
