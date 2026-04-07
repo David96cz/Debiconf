@@ -1,13 +1,9 @@
 [SETTINGS]
 GRUB_TIMEOUT=0
 BOOT_LOGO=TRUE
-AUTOLOGIN=TRUE
-RELOGIN=TRUE
-CONFIRM_LOGOUT=TRUE
+CONFIRM_LOGOUT=FALSE
 
 [INSTALL]
-BROWSER_URL=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-
 # --- Globální balíčky (nainstalují se všude) ---
 htop
 vlc
