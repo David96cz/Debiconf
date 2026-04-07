@@ -11,3 +11,4 @@ zram-tools
 flameshot
 gdebi
 copyq
+featherpad

@@ -132,18 +132,16 @@ fi
 mkdir -p /etc/polkit-1/rules.d
 echo 'polkit.addRule(function(action, subject) { if ((action.id == "org.freedesktop.udisks2.filesystem-mount-system" || action.id == "org.freedesktop.udisks2.filesystem-mount") && subject.isInGroup("sudo")) { return polkit.Result.YES; } });' > /etc/polkit-1/rules.d/50-udisks2-automount.rules
 
-# Touchpad (X11)
+# Touchpad (X11) - načtení z externího konfigu
+TOUCHPAD_SRC="$CONTENTS_DIR/lxqt/config/touchpad.conf"
 mkdir -p /etc/X11/xorg.conf.d
-cat > /etc/X11/xorg.conf.d/40-libinput-touchpad.conf << 'EOF'
-Section "InputClass"
-    Identifier "touchpad"
-    MatchIsTouchpad "on"
-    Driver "libinput"
-    Option "ClickMethod" "clickfinger"
-    Option "Tapping" "on"
-    Option "NaturalScrolling" "true"
-EndSection
-EOF
+
+if [ -f "$TOUCHPAD_SRC" ]; then
+    echo ">> Kopíruji nastavení touchpadu..."
+    cp "$TOUCHPAD_SRC" /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
+else
+    echo ">> VAROVÁNÍ: $TOUCHPAD_SRC nenalezen, touchpad zůstane ve výchozím stavu."
+fi
 
 # --- 6. LXQT TWEAKY (REFACTORED) ---
 if [ "$DESKTOP_ENV" == "LXQT" ]; then
@@ -213,18 +211,29 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
     mkdir -p "$(dirname "$Q_CONF")"
     [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=false" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF"
 
-    # Tisk v menu
-    mkdir -p "$USER_HOME/.local/share/file-manager/actions"
-    cat > "$USER_HOME/.local/share/file-manager/actions/tisk.desktop" << EOF
-[Desktop Entry]
-Type=Action
-Name=Vytisknout...
-Icon=printer
-Profiles=profile-zero;
-[X-Action-Profile profile-zero]
-MimeTypes=image/*;application/pdf;text/plain;
-Exec=/usr/local/bin/tisk-cz %f
-EOF
+    # --- KONTEXTOVÉ MENU (Akce pro správce souborů) ---
+    CONTEXT_CONF="$CONTENTS_DIR/lxqt/config/contextmenu.conf"
+    ACTION_DIR="$USER_HOME/.local/share/file-manager/actions"
+
+    if [ -s "$CONTEXT_CONF" ]; then
+        echo ">> Generuji akce kontextového menu z $CONTEXT_CONF..."
+        mkdir -p "$ACTION_DIR"
+        CURRENT_FILE=""
+
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            # Detekce nového bloku (řádek začínající FILE:)
+            if [[ "$line" =~ ^FILE:\ (.*\.desktop)$ ]]; then
+                CURRENT_FILE="${BASH_REMATCH[1]}"
+                # Vytvoření prázdného souboru pro novou akci
+                > "$ACTION_DIR/$CURRENT_FILE"
+            # Zápis do souboru (pokud už nějaký čteme a řádek není prázdný zbytečně)
+            elif [ -n "$CURRENT_FILE" ]; then
+                echo "$line" >> "$ACTION_DIR/$CURRENT_FILE"
+            fi
+        done < "$CONTEXT_CONF"
+    else
+        echo ">> VAROVÁNÍ: $CONTEXT_CONF je prázdný nebo chybí, akce v menu se negenerují."
+    fi
 
     chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config" "$USER_HOME/.local"
 fi
