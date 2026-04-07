@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# DEBICONF - ULTIMATE REFACTORED VERSION (XFWM & ZKRATKY DEFINITIVE FIX)
+# DEBICONF - ČISTÝ DEBIAN S NÁSLEDNOU INSTALACÍ DESKTOP PROSTŘEDÍ
 # ==============================================================================
 
 if [ "$EUID" -ne 0 ]; then
@@ -15,7 +15,6 @@ BASE_DIR="$(dirname "$(realpath "$0")")"
 CONTENTS_DIR="$BASE_DIR/.contents"
 GLOBAL_CONFIG="$CONTENTS_DIR/setup-config.txt"
 
-# Oprava názvů (case-sensitive Linux) a konců řádků (Windows CR/LF -> Unix LF)
 [ -f "$CONTENTS_DIR/lxqt/config/Shortcuts.conf" ] && mv "$CONTENTS_DIR/lxqt/config/Shortcuts.conf" "$CONTENTS_DIR/lxqt/config/shortcuts.conf" 2>/dev/null
 [ -f "$CONTENTS_DIR/lxqt/config/shortcuts.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/shortcuts.conf"
 [ -f "$CONTENTS_DIR/lxqt/config/xfwm.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/xfwm.conf"
@@ -248,8 +247,8 @@ update-grub
 systemctl set-default graphical.target
 
 echo "=================================================="
-echo " HOTOVO. XFWM je zpátky. Zkratky se kódují správně."
-echo " REBOOT ZA 5 SEKUND."
+echo " HOTOVO."
+echo " RESTART ZA 5 SEKUND."
 echo "=================================================="
 sleep 5
 reboot
