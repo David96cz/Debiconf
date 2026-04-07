@@ -12,7 +12,7 @@ fi
 REAL_USER=$(ls /home | head -n 1)
 USER_HOME="/home/$REAL_USER"
 BASE_DIR="$(dirname "$(realpath "$0")")"
-CONTENTS_DIR="$BASE_DIR/.contents"
+CONTENTS_DIR="$BASE_DIR/contents"
 GLOBAL_CONFIG="$BASE_DIR/setup-config.txt"
 
 # --- 1. INTERAKTIVNÍ DOTAZY (Hned na začátku) ---
