@@ -13,7 +13,7 @@ fi
 REAL_USER=$(ls /home | head -n 1)
 USER_HOME="/home/$REAL_USER"
 echo "Našel jsem složku uživatele: $REAL_USER. Dávám mu sudo práva..."
-apt update && apt install -y sudo curl wget dpkg-dev
+apt update && apt install -y sudo curl wget dpkg-dev git
 usermod -aG sudo $REAL_USER
 
 # --- 2. DEFINICE ABSOLUTNÍCH CEST ---
@@ -43,6 +43,9 @@ TIMEOUT=$(grep -i "^GRUB_TIMEOUT=" "$GLOBAL_CONFIG" | cut -d'=' -f2 | cut -d' ' 
 
 if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]]; then TIMEOUT="0"; fi
 
+# Načtení globálních balíčků (ignoruje řádky s '=' jako BROWSER_URL)
+GLOBAL_PACKAGES=$(sed -n '/^\[INSTALL\]/,/^\[/p' "$GLOBAL_CONFIG" | grep -v '^\[.*\]' | grep -vE '^\s*#|^\s*$' | grep -v '=' | xargs)
+
 # --- 4. NAČTENÍ SPECIFIK PROSTŘEDÍ (Z LOKÁLNÍHO CONFIGU) ---
 LOCAL_CONFIG_DIR="$CONTENTS_DIR/$(echo $DESKTOP_ENV | tr '[:upper:]' '[:lower:]')"
 LOCAL_CONFIG="$LOCAL_CONFIG_DIR/config.txt"
@@ -58,7 +61,7 @@ EXTRA_PACKAGES=$(sed -n '/^\[EXTRA_PACKAGES\]/,/^\[/p' "$LOCAL_CONFIG" | grep -v
 APPS_TO_HIDE_STR=$(sed -n '/^\[APPS_TO_HIDE\]/,/^\[/p' "$LOCAL_CONFIG" | grep -v '^\[.*\]' | grep -vE '^\s*#|^\s*$' | xargs)
 read -r -a APPS_TO_HIDE <<< "$APPS_TO_HIDE_STR"
 
-ALL_PACKAGES="$CORE_PACKAGES $EXTRA_PACKAGES"
+ALL_PACKAGES="$CORE_PACKAGES $EXTRA_PACKAGES $GLOBAL_PACKAGES"
 
 # --- 5. INSTALACE BALÍKŮ (S FILTRACÍ CHYBĚJÍCÍCH) ---
 echo "Filtruji neexistující balíky..."
@@ -219,7 +222,53 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
         echo '{"DefaultBrowserSettingEnabled": false}' > "$policy_dir/stop-otravovat.json"
     done
 
-    # XFWM4 nastavení
+    # =========================================================
+    # TVOJE TVRDÉ LXQT A XFWM4 NASTAVENÍ + ePAPIRUS
+    # =========================================================
+
+    # Stažení a instalace ePapirus ikon z GitHubu
+    echo "Instaluji přesnou verzi ePapirus ikon..."
+    cd /tmp
+    git clone https://github.com/PapirusDevelopmentTeam/papirus-icon-theme.git
+    cd papirus-icon-theme
+    git checkout $(git rev-list -n 1 --before="2022-06-01" HEAD)
+    cp -r ePapirus /usr/share/icons/
+    cp -r ePapirus-Dark /usr/share/icons/
+    cd /tmp
+    rm -rf papirus-icon-theme
+
+    # XFWM4 nastavení (layout a chování)
+    echo "Aplikuji tvůj XFWM4 layout..."
+    XFWM4_XML="$USER_HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml"
+    mkdir -p "$(dirname "$XFWM4_XML")"
+    cat <<EOF > "$XFWM4_XML"
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="theme" type="string" value="Default"/>
+    <property name="button_layout" type="string" value="O|HMC"/>
+    <property name="title_alignment" type="string" value="center"/>
+    <property name="tile_on_move" type="bool" value="true"/>
+    <property name="wrap_pointer" type="bool" value="false"/>
+    <property name="wrap_windows" type="bool" value="false"/>
+  </property>
+</channel>
+EOF
+    chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config/xfce4"
+
+    # Zápis lxqt.conf a session.conf
+    LXQT_CONF="$USER_HOME/.config/lxqt/lxqt.conf"
+    mkdir -p "$(dirname "$LXQT_CONF")"
+    if [ ! -f "$LXQT_CONF" ] || ! grep -q "icon_theme=" "$LXQT_CONF"; then
+        echo "Zapisuji pevný lxqt.conf..."
+        cat <<EOF > "$LXQT_CONF"
+[General]
+icon_theme=ePapirus
+theme=Lubuntu-Arc
+themeOverridesWallpaper=false
+EOF
+    fi
+
     SESSION_CONF="$USER_HOME/.config/lxqt/session.conf"
     if [ ! -f "$SESSION_CONF" ]; then
         echo -e "[General]\nwindow_manager=xfwm4" > "$SESSION_CONF"

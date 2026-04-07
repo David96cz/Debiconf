@@ -1,5 +1,5 @@
 [CORE_PACKAGES]
-lxqt-core lightdm xorg pcmanfm-qt qterminal arc-theme papirus-icon-theme network-manager nm-tray
+lxqt-core lightdm xorg pcmanfm-qt qterminal arc-theme papirus-icon-theme network-manager nm-tray lxqt-l10n task-czech task-czech-desktop breeze
 
 [EXTRA_PACKAGES]
 xfwm4 xfconf gdebi flameshot htop vlc featherpad icoutils viewnior ffmpegthumbnailer zram-tools gthumb cabextract yad cups-client cups brightnessctl libnotify-bin copyq
@@ -9,3 +9,8 @@ lxqt-about.desktop
 qterminal-drop.desktop
 lxqt-lockscreen.desktop
 lxqt-leave.desktop
+lxqt-reboot.desktop
+lxqt-shutdown.desktop
+lxqt-hibernate.desktop
+lxqt-suspend.desktop
+lxqt-logout.desktop
