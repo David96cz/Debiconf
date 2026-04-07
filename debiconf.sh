@@ -18,7 +18,7 @@ usermod -aG sudo $REAL_USER
 
 # --- 2. DEFINICE ABSOLUTNÍCH CEST ---
 BASE_DIR="$(dirname "$(realpath "$0")")"
-CONTENTS_DIR="$BASE_DIR/.contents"
+CONTENTS_DIR="$BASE_DIR/contents"
 GLOBAL_CONFIG="$BASE_DIR/setup-config.txt"
 
 # --- 3. VOLBA PROSTŘEDÍ A NAČTENÍ GLOBÁLNÍ KONFIGURACE ---
