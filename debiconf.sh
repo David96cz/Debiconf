@@ -195,6 +195,33 @@ EOF
         fi
     done
 
+    # --- IKONY DO PANELU (Quicklaunch) ---
+    echo "Nastavuji ikony do panelu (Správce souborů + Prohlížeč)..."
+    PANEL_CONF="$USER_HOME/.config/lxqt/panel.conf"
+    
+    # Zjištění správného .desktop souboru podle výběru prohlížeče
+    case $BROWSER_CHOICE in
+        1) BROWSER_APP="google-chrome.desktop" ;;
+        2) BROWSER_APP="chromium.desktop" ;;
+        3) BROWSER_APP="brave-browser.desktop" ;;
+        4) BROWSER_APP="firefox-esr.desktop" ;;
+        *) BROWSER_APP="" ;;
+    esac
+
+    if [ -f "$PANEL_CONF" ]; then
+        # Bezpečné vymazání starých ikon v panelu (smaže řádky začínající na apps\)
+        sed -i '/^apps\\/d' "$PANEL_CONF"
+        
+        # Vložení správce souborů a prohlížeče (pokud je zvolen)
+        if grep -q "^\[quicklaunch\]" "$PANEL_CONF"; then
+            if [ -n "$BROWSER_APP" ]; then
+                sed -i "/^\[quicklaunch\]/a apps\\\\1\\\\desktop=/usr/share/applications/pcmanfm-qt.desktop\napps\\\\2\\\\desktop=/usr/share/applications/$BROWSER_APP\napps\\\\size=2" "$PANEL_CONF"
+            else
+                sed -i "/^\[quicklaunch\]/a apps\\\\1\\\\desktop=/usr/share/applications/pcmanfm-qt.desktop\napps\\\\size=1" "$PANEL_CONF"
+            fi
+        fi
+    fi
+
     chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config" "$USER_HOME/.local"
 fi
 
