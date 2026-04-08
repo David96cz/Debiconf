@@ -251,18 +251,43 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
     chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config" "$USER_HOME/.local"
 elif [ "$DESKTOP_ENV" == "PLASMA" ]; then
     
-    echo ">> Aplikuji specifické nastavení pro Plasmu..."
+    echo ">> Aplikuji specifické nastavení pro Plasmu (Zvuk, Motiv, Klíčenka)..."
     
-    # --- A. POTVRZENÍ ODHLÁŠENÍ V PLASMĚ ---
-    KSM_CONF="$USER_HOME/.config/ksmserverrc"
+    # Vytvoření složky pro konfiguraci, pokud neexistuje
     mkdir -p "$USER_HOME/.config"
-    
+
+    # --- A. POTVRZENÍ ODHLÁŠENÍ V PLASMĚ ---
+    # Řídí se podle toho, co máš v setup-config.txt
+    KSM_CONF="$USER_HOME/.config/ksmserverrc"
     if [ "$CONF_OUT" == "false" ]; then
         echo -e "[General]\nconfirmLogout=false" > "$KSM_CONF"
     else
         echo -e "[General]\nconfirmLogout=true" > "$KSM_CONF"
     fi
     
+    # --- B. VYPNUTÍ KWALLET (Úschovny) ---
+    # Tohle definitivně zabije dotazy na GPG a šifrování v prohlížečích
+    echo -e "[Wallet]\nEnabled=false" > "$USER_HOME/.config/kwalletrc"
+
+    # --- C. VYNUCENÍ MOTIVU TWILIGHT (Tmavý panel, bílá okna) ---
+    # 1. Globální nastavení přes lookandfeeltool
+    su - $REAL_USER -c "dbus-launch lookandfeeltool -a org.kde.plasma.twilight" 2>/dev/null
+    
+    # 2. Tvrdá pojistka pro panel: Zapíšeme Breeze Dark přímo do plasmarc
+    # Tohle zajistí, že i při prvním bootu bude panel černý a ne bílý
+    PLASMARC="$USER_HOME/.config/plasmarc"
+    if [ ! -f "$PLASMARC" ]; then
+        echo -e "[Theme]\nname=breeze-dark" > "$PLASMARC"
+    else
+        # Pokud soubor existuje, najdeme sekci [Theme] a přepíšeme name, nebo ji přidáme
+        if grep -q "^\[Theme\]" "$PLASMARC"; then
+            sed -i '/^\[Theme\]/,/^\[/ s/^name=.*/name=breeze-dark/' "$PLASMARC"
+        else
+            echo -e "\n[Theme]\nname=breeze-dark" >> "$PLASMARC"
+        fi
+    fi
+
+    # Nastavení práv pro celou složku .config, aby na to user mohl sahat
     chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config"
 fi
 
