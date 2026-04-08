@@ -93,7 +93,6 @@ prepare_system() {
     apt-get update -qq
     apt-get install -y sudo curl wget dpkg-dev git dbus-x11 numlockx
     
-    # OPRAVENO: Vyhozeny mrtvé skupiny pulse a pulse-access a přidána pojistka || true
     usermod -aG sudo,audio,video,plugdev "$REAL_USER" || true
 
     apt-get purge -y ifupdown || true
@@ -318,12 +317,45 @@ configure_lxqt() {
 }
 
 configure_plasma() {
-    log "Aplikuji specifické nastavení pro Plasmu (Motiv, Klíčenka)..."
-    mkdir -p "$USER_HOME/.config"
+    log "Aplikuji specifické nastavení pro Plasmu (Motiv, Klíčenka, Zkratky, GTK Chrome Fix)..."
+    
+    mkdir -p "$USER_HOME/.config" "$USER_HOME/.local/share/applications"
 
     echo -e "[General]\nconfirmLogout=$CONF_OUT" > "$USER_HOME/.config/ksmserverrc" || true
     echo -e "[Wallet]\nEnabled=false" > "$USER_HOME/.config/kwalletrc" || true
 
+    # 1. GTK Fix pro Chrome (aby zobrazil všechna tři tlačítka, nejen křížek)
+    mkdir -p "$USER_HOME/.config/gtk-3.0"
+    echo -e "[Settings]\ngtk-decoration-layout=icon:minimize,maximize,close" > "$USER_HOME/.config/gtk-3.0/settings.ini" || true
+
+    # 2. Zkratky - Příprava zástupce pro Htop
+    cat > "$USER_HOME/.local/share/applications/custom-htop.desktop" << 'EOF'
+[Desktop Entry]
+Name=Htop
+Exec=konsole -e htop
+Type=Application
+Terminal=false
+EOF
+
+    # 3. Zkratky - Zápis přímo do konfigu Plasmy (kglobalshortcutsrc)
+    local SHORTCUTS_CONF="$USER_HOME/.config/kglobalshortcutsrc"
+    touch "$SHORTCUTS_CONF"
+    
+    # A) Zkratka pro Htop (Ctrl+Shift+Esc)
+    if ! grep -q "^\[custom-htop.desktop\]" "$SHORTCUTS_CONF"; then
+        echo -e "\n[custom-htop.desktop]\n_launch=Ctrl+Shift+Esc,none,Htop" >> "$SHORTCUTS_CONF"
+    else
+        sed -i 's/^_launch=.*/_launch=Ctrl+Shift+Esc,none,Htop/' "$SHORTCUTS_CONF" || true
+    fi
+
+    # B) Zkratka pro Výstřižky (Meta+Shift+S)
+    if ! grep -q "^\[org.kde.spectacle.desktop\]" "$SHORTCUTS_CONF"; then
+        echo -e "\n[org.kde.spectacle.desktop]\nRectangularRegionScreenShot=Meta+Shift+S,Meta+Shift+Print,Draw a rectangle to take a screenshot" >> "$SHORTCUTS_CONF"
+    else
+        sed -i 's/^RectangularRegionScreenShot=.*/RectangularRegionScreenShot=Meta+Shift+S,Meta+Shift+Print,Draw a rectangle to take a screenshot/' "$SHORTCUTS_CONF" || true
+    fi
+
+    # 4. Motiv
     run_as_user "lookandfeeltool -a org.kde.plasma.twilight"
     
     local PLASMARC="$USER_HOME/.config/plasmarc"
@@ -337,7 +369,7 @@ configure_plasma() {
         fi
     fi
 
-    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" || true
+    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" || true
 }
 
 # === 4. SYSTÉMOVÉ SLUŽBY A BOOT ===
