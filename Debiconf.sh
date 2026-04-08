@@ -200,16 +200,24 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
         [ -f "$LOCAL_APPS/$app" ] && sed -i '/^NoDisplay=/d; $ a NoDisplay=true' "$LOCAL_APPS/$app"
     done
 
-    # --- E. PANEL IKONY ---
+    # --- E. PANEL IKONY A VÝCHOZÍ PROHLÍŽEČ ---
     PANEL_CONF="$USER_HOME/.config/lxqt/panel.conf"
+    SESSION_CONF="$USER_HOME/.config/lxqt/session.conf"
+    
     case $BROWSER_CHOICE in
-        1) B_NAME="google-chrome.desktop" ;;
-        2) B_NAME="chromium.desktop" ;;
-        3) B_NAME="brave-browser.desktop" ;;
-        4) B_NAME="firefox-esr.desktop" ;;
-        *) B_NAME="" ;;
+        1) B_NAME="google-chrome.desktop"; B_EXEC="google-chrome-stable" ;;
+        2) B_NAME="chromium.desktop"; B_EXEC="chromium" ;;
+        3) B_NAME="brave-browser.desktop"; B_EXEC="brave-browser" ;;
+        4) B_NAME="firefox-esr.desktop"; B_EXEC="firefox-esr" ;;
+        *) B_NAME=""; B_EXEC="" ;;
     esac
 
+    # Zápis výchozího prohlížeče do session.conf
+    if [ -f "$SESSION_CONF" ] && [ -n "$B_EXEC" ]; then
+        sed -i "s/^BROWSER=.*/BROWSER=$B_EXEC/" "$SESSION_CONF"
+    fi
+
+    # Zápis zástupců do panelu
     if [ -f "$PANEL_CONF" ]; then
         sed -i '/^apps\\/d' "$PANEL_CONF"
         if [ -n "$B_NAME" ]; then
@@ -241,13 +249,47 @@ if [ "$DESKTOP_ENV" == "LXQT" ]; then
     fi
 
     chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config" "$USER_HOME/.local"
+elif [ "$DESKTOP_ENV" == "PLASMA" ]; then
+    
+    echo ">> Aplikuji specifické nastavení pro Plasmu..."
+    
+    # --- A. POTVRZENÍ ODHLÁŠENÍ V PLASMĚ ---
+    KSM_CONF="$USER_HOME/.config/ksmserverrc"
+    mkdir -p "$USER_HOME/.config"
+    
+    if [ "$CONF_OUT" == "false" ]; then
+        echo -e "[General]\nconfirmLogout=false" > "$KSM_CONF"
+    else
+        echo -e "[General]\nconfirmLogout=true" > "$KSM_CONF"
+    fi
+    
+    chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config"
 fi
 
-# --- 7. LIGHTDM A GRUB ---
-if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
-    mkdir -p /etc/lightdm/lightdm.conf.d
-    echo -e "[Seat:*]\nautologin-user=$REAL_USER\nautologin-user-timeout=0" > /etc/lightdm/lightdm.conf.d/autologin.conf
-    sed -i 's/^#greeter-setup-script=.*/greeter-setup-script=\/usr\/bin\/numlockx on/' /etc/lightdm/lightdm.conf 2>/dev/null
+# --- 7. DISPLAY MANAGER (SDDM / LIGHTDM) A GRUB ---
+if [ "$DESKTOP_ENV" == "PLASMA" ]; then
+    # --- PLASMA (SDDM) ---
+    echo "/usr/bin/sddm" > /etc/X11/default-display-manager 2>/dev/null
+    dpkg-reconfigure -f noninteractive sddm 2>/dev/null
+    
+    if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
+        mkdir -p /etc/sddm.conf.d
+        cat > /etc/sddm.conf.d/autologin.conf << EOF
+[Autologin]
+User=$REAL_USER
+Session=plasma
+EOF
+    fi
+else
+    # --- LXQT (LIGHTDM) ---
+    echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager 2>/dev/null
+    dpkg-reconfigure -f noninteractive lightdm 2>/dev/null
+    
+    if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
+        mkdir -p /etc/lightdm/lightdm.conf.d
+        echo -e "[Seat:*]\nautologin-user=$REAL_USER\nautologin-user-timeout=0" > /etc/lightdm/lightdm.conf.d/autologin.conf
+        sed -i 's/^#greeter-setup-script=.*/greeter-setup-script=\/usr\/bin\/numlockx on/' /etc/lightdm/lightdm.conf 2>/dev/null
+    fi
 fi
 
 sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=$TIMEOUT/" /etc/default/grub
