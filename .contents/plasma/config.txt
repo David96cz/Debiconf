@@ -1,5 +1,5 @@
 [CORE_PACKAGES]
-plasma-desktop sddm xorg konsole dolphin network-manager plasma-nm systemsettings kscreen powerdevil plasma-pa bluedevil kinfocenter pipewire-audio wireplumber pipewire-pulse plasma-discover kde-spectacle wl-clipboard breeze-gtk kde-gtk-config
+plasma-desktop sddm xorg konsole dolphin network-manager plasma-nm systemsettings kscreen powerdevil plasma-pa bluedevil kinfocenter pipewire-audio wireplumber pipewire-pulse plasma-discover kde-spectacle wl-clipboard breeze-gtk-theme kde-config-gtk-style
 
 [EXTRA_PACKAGES]
 # Balíčky specifické jen pro Plasmu (když je prázdno, nic se neděje)
