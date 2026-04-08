@@ -250,10 +250,22 @@ configure_lxqt() {
         grep -q "^window_manager=" "$SESSION_CONF" || sed -i '/^\[General\]/a window_manager=xfwm4' "$SESSION_CONF" || true
     fi
 
-    if [ -f "$XFWM_SRC" ]; then
+if [ -f "$XFWM_SRC" ]; then
         log "Aplikuji externí konfiguraci XFWM4..."
         sed -i 's/\r$//' "$XFWM_SRC"
-        su - "$REAL_USER" -c "dbus-run-session bash $XFWM_SRC" || true
+        
+        # 1. Přesuneme to do /tmp, aby k tomu měl běžný uživatel 100% přístup
+        cp "$XFWM_SRC" /tmp/xfwm-apply.sh
+        chown "$REAL_USER:$REAL_USER" /tmp/xfwm-apply.sh
+        
+        # 2. Vynutíme vytvoření cílových složek, aby xfconf-query nespadl do prázdna
+        su - "$REAL_USER" -c "mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml"
+        
+        # 3. Spustíme to v D-Busu
+        su - "$REAL_USER" -c "dbus-run-session bash /tmp/xfwm-apply.sh" || true
+        
+        # 4. Uklidíme (žádný odpad v systému nezůstane)
+        rm -f /tmp/xfwm-apply.sh
     fi
 
     local LXQT_CONF="$USER_HOME/.config/lxqt/lxqt.conf"
