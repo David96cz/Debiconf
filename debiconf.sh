@@ -317,45 +317,41 @@ configure_lxqt() {
 }
 
 configure_plasma() {
-    log "Aplikuji specifické nastavení pro Plasmu (Motiv, Klíčenka, Zkratky, GTK Chrome Fix)..."
+    log "Aplikuji specifické nastavení pro Plasmu (Čisté zkratky a GTK Fix)..."
     
-    mkdir -p "$USER_HOME/.config" "$USER_HOME/.local/share/applications"
+    mkdir -p "$USER_HOME/.config"
 
+    # 1. Základní chování (Odhlášení a Klíčenka)
     echo -e "[General]\nconfirmLogout=$CONF_OUT" > "$USER_HOME/.config/ksmserverrc" || true
     echo -e "[Wallet]\nEnabled=false" > "$USER_HOME/.config/kwalletrc" || true
 
-    # 1. GTK Fix pro Chrome (aby zobrazil všechna tři tlačítka, nejen křížek)
+    # 2. GTK Fix pro Chrome (aby okno mělo všechna tlačítka)
     mkdir -p "$USER_HOME/.config/gtk-3.0"
     echo -e "[Settings]\ngtk-decoration-layout=icon:minimize,maximize,close" > "$USER_HOME/.config/gtk-3.0/settings.ini" || true
 
-    # 2. Zkratky - Příprava zástupce pro Htop
-    cat > "$USER_HOME/.local/share/applications/custom-htop.desktop" << 'EOF'
-[Desktop Entry]
-Name=Htop
-Exec=konsole -e htop
-Type=Application
-Terminal=false
-EOF
+    # 3. ÚKLID: Smažeme ty zbytečné zástupce z minula, pokud tam zůstali
+    rm -f "$USER_HOME/.local/share/applications/htop.desktop" || true
+    rm -f "$USER_HOME/.local/share/applications/custom-htop.desktop" || true
 
-    # 3. Zkratky - Zápis přímo do konfigu Plasmy (kglobalshortcutsrc)
+    # 4. ZKRATKY: Nabindujeme to přímo na systémové .desktop soubory
     local SHORTCUTS_CONF="$USER_HOME/.config/kglobalshortcutsrc"
     touch "$SHORTCUTS_CONF"
     
-    # A) Zkratka pro Htop (Ctrl+Shift+Esc)
-    if ! grep -q "^\[custom-htop.desktop\]" "$SHORTCUTS_CONF"; then
-        echo -e "\n[custom-htop.desktop]\n_launch=Ctrl+Shift+Esc,none,Htop" >> "$SHORTCUTS_CONF"
+    # Zkratka pro Htop (Ctrl+Shift+Esc) - Plasma si to sama najde v /usr/share/applications/htop.desktop
+    if ! grep -q "^\[htop.desktop\]" "$SHORTCUTS_CONF"; then
+        echo -e "\n[htop.desktop]\n_launch=Ctrl+Shift+Esc,none,htop" >> "$SHORTCUTS_CONF"
     else
-        sed -i 's/^_launch=.*/_launch=Ctrl+Shift+Esc,none,Htop/' "$SHORTCUTS_CONF" || true
+        sed -i '/^\[htop.desktop\]/,/^\[/ s/^_launch=.*/_launch=Ctrl+Shift+Esc,none,htop/' "$SHORTCUTS_CONF" || true
     fi
 
-    # B) Zkratka pro Výstřižky (Meta+Shift+S)
+    # Zkratka pro Výstřižky (Meta+Shift+S) - Využije systémový org.kde.spectacle.desktop
     if ! grep -q "^\[org.kde.spectacle.desktop\]" "$SHORTCUTS_CONF"; then
         echo -e "\n[org.kde.spectacle.desktop]\nRectangularRegionScreenShot=Meta+Shift+S,Meta+Shift+Print,Draw a rectangle to take a screenshot" >> "$SHORTCUTS_CONF"
     else
-        sed -i 's/^RectangularRegionScreenShot=.*/RectangularRegionScreenShot=Meta+Shift+S,Meta+Shift+Print,Draw a rectangle to take a screenshot/' "$SHORTCUTS_CONF" || true
+        sed -i '/^\[org.kde.spectacle.desktop\]/,/^\[/ s/^RectangularRegionScreenShot=.*/RectangularRegionScreenShot=Meta+Shift+S,Meta+Shift+Print,Draw a rectangle to take a screenshot/' "$SHORTCUTS_CONF" || true
     fi
 
-    # 4. Motiv
+    # 5. Vizuál (Twilight motiv a tmavý panel)
     run_as_user "lookandfeeltool -a org.kde.plasma.twilight"
     
     local PLASMARC="$USER_HOME/.config/plasmarc"
@@ -369,7 +365,8 @@ EOF
         fi
     fi
 
-    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" || true
+    # Nastavení práv, aby na to mohl user i systém
+    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" || true
 }
 
 # === 4. SYSTÉMOVÉ SLUŽBY A BOOT ===
