@@ -86,6 +86,9 @@ init_setup() {
     [[ "$CONF_OUT_RAW" == "TRUE" ]] && CONF_OUT="true" || CONF_OUT="false"
     
     BOOT_LOGO=$(get_setting "BOOT_LOGO" | tr '[:lower:]' '[:upper:]')
+
+    ROOT_ADMIN_RAW=$(get_setting "ROOT_ADMIN_ONLY" | tr '[:lower:]' '[:upper:]')
+    [[ "$ROOT_ADMIN_RAW" == "TRUE" ]] && ROOT_ADMIN_ONLY="TRUE" || ROOT_ADMIN_ONLY="FALSE"
 }
 
 prepare_system() {
@@ -422,6 +425,19 @@ setup_boot() {
     systemctl set-default graphical.target || true
 }
 
+admin_security() {
+        # === 5. FINÁLNÍ ZABEZPEČENÍ ===
+    if [ "$ROOT_ADMIN_ONLY" == "TRUE" ]; then
+        log "Zabezpečuji systém: Odstraňuji uživatele '$REAL_USER' ze skupiny sudo..."
+    
+        # Vyhození ze skupiny sudo a smazání případných výjimek
+        deluser "$REAL_USER" sudo 2>/dev/null || true
+        rm -f "/etc/sudoers.d/$REAL_USER" 2>/dev/null || true
+    
+        log "Uživatel '$REAL_USER' byl degradován. Pro správu systému bude vyžadováno heslo ROOT."
+    fi
+}
+
 # ==============================================================================
 # BĚH PROGRAMU (MAIN)
 # ==============================================================================
@@ -439,6 +455,7 @@ fi
 
 setup_display_manager
 setup_boot
+admin_security
 
 echo "=================================================="
 echo " HOTOVO"

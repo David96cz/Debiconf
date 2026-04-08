@@ -2,6 +2,7 @@
 GRUB_TIMEOUT=0
 BOOT_LOGO=TRUE
 CONFIRM_LOGOUT=FALSE
+ROOT_ADMIN_ONLY=TRUE # Zajistí, že se bude používat pouze root heslo k sudo věcem
 
 [INSTALL]
 htop
