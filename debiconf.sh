@@ -33,13 +33,15 @@ error() {
 }
 
 run_as_user() {
-    su - "$REAL_USER" -c "dbus-launch $1" 2>/dev/null
+    # Přidáno || true, aby selhání D-Bus nezabilo instalaci
+    su - "$REAL_USER" -c "dbus-launch $1" 2>/dev/null || true
 }
 
 get_setting() {
     local key="$1"
     if [ -f "$GLOBAL_CONFIG" ]; then
-        grep -i "^${key}=" "$GLOBAL_CONFIG" | cut -d'=' -f2 | tr -d '[:space:]'
+        # Přidáno || true, jinak grep zabije skript, když klíč nenajde
+        grep -i "^${key}=" "$GLOBAL_CONFIG" | cut -d'=' -f2 | tr -d '[:space:]' || true
     fi
 }
 
@@ -47,7 +49,8 @@ get_section() {
     local file="$1"
     local section="$2"
     if [ -f "$file" ]; then
-        sed -n "/^\[$section\]/,/^\[/p" "$file" | grep -v '^\[.*\]' | grep -vE '^\s*(#|$)' | xargs
+        # Přidáno || true pro ochranu proti prázdným sekcím
+        sed -n "/^\[$section\]/,/^\[/p" "$file" | grep -v '^\[.*\]' | grep -vE '^\s*(#|$)' | xargs || true
     fi
 }
 
@@ -89,10 +92,12 @@ prepare_system() {
     log "Základní příprava systému a sítě..."
     apt-get update -qq
     apt-get install -y sudo curl wget dpkg-dev git dbus-x11 numlockx
-    usermod -aG sudo,audio,pulse,pulse-access,video,plugdev "$REAL_USER"
+    
+    # OPRAVENO: Vyhozeny mrtvé skupiny pulse a pulse-access a přidána pojistka || true
+    usermod -aG sudo,audio,video,plugdev "$REAL_USER" || true
 
     apt-get purge -y ifupdown || true
-    rm -rf /etc/network/interfaces.d/*
+    rm -rf /etc/network/interfaces.d/* || true
     cat > /etc/network/interfaces << 'EOF'
 auto lo
 iface lo inet loopback 
@@ -117,16 +122,16 @@ install_packages() {
 
     log "Instaluji prohlížeč..."
     case $BROWSER_CHOICE in
-        1) wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && apt-get install -y /tmp/chrome.deb ;;
-        2) apt-get install -y chromium chromium-l10n ;;
-        3) curl -fsS https://dl.brave.com/install.sh | sh ;;
-        4) apt-get install -y firefox-esr firefox-esr-l10n-cs ;;
+        1) wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && apt-get install -y /tmp/chrome.deb || true ;;
+        2) apt-get install -y chromium chromium-l10n || true ;;
+        3) curl -fsS https://dl.brave.com/install.sh | sh || true ;;
+        4) apt-get install -y firefox-esr firefox-esr-l10n-cs || true ;;
     esac
 
     log "Přidávám repozitář a instaluji AnyDesk..."
     curl -fsSL https://keys.anydesk.com/repos/DEB-GPG-KEY | gpg --dearmor -o /usr/share/keyrings/anydesk.gpg 2>/dev/null || true
-    echo "deb [signed-by=/usr/share/keyrings/anydesk.gpg] http://deb.anydesk.com/ all main" > /etc/apt/sources.list.d/anydesk-stable.list
-    apt-get update -qq && apt-get install -y anydesk
+    echo "deb [signed-by=/usr/share/keyrings/anydesk.gpg] http://deb.anydesk.com/ all main" > /etc/apt/sources.list.d/anydesk-stable.list || true
+    apt-get update -qq && apt-get install -y anydesk || true
 }
 
 setup_auto_updates() {
@@ -136,9 +141,9 @@ setup_auto_updates() {
 
     local UPGRADES_CONF="/etc/apt/apt.conf.d/50unattended-upgrades"
     if [ -f "$UPGRADES_CONF" ]; then
-        sed -i 's/\/\/      "o=Debian,a=${distro_codename}-updates";/"o=Debian,a=${distro_codename}-updates";/' "$UPGRADES_CONF"
+        sed -i 's/\/\/      "o=Debian,a=${distro_codename}-updates";/"o=Debian,a=${distro_codename}-updates";/' "$UPGRADES_CONF" || true
         if ! grep -q "Unattended-Upgrade::Package-Blacklist" "$UPGRADES_CONF"; then
-            echo 'Unattended-Upgrade::Origins-Pattern { "o=*"; };' >> "/etc/apt/apt.conf.d/20auto-upgrades"
+            echo 'Unattended-Upgrade::Origins-Pattern { "o=*"; };' >> "/etc/apt/apt.conf.d/20auto-upgrades" || true
         fi
     fi
 
@@ -166,14 +171,15 @@ configure_lxqt() {
     read -r -a APPS_TO_HIDE <<< "$APPS_TO_HIDE_STR"
 
     cd /tmp && rm -rf lubuntu-rip && mkdir -p lubuntu-rip && cd lubuntu-rip
-    FILE_NAME=$(wget -qO- http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/ | grep -o 'lubuntu-artwork_[^"]*_all\.deb' | tail -n 1)
+    FILE_NAME=$(wget -qO- http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/ | grep -o 'lubuntu-artwork_[^"]*_all\.deb' | tail -n 1) || true
     if [ -n "$FILE_NAME" ]; then
-        wget "http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/$FILE_NAME" -O lubuntu-artwork.deb
-        dpkg-deb -x lubuntu-artwork.deb root_dir
+        wget "http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/$FILE_NAME" -O lubuntu-artwork.deb || true
+        dpkg-deb -x lubuntu-artwork.deb root_dir || true
         mkdir -p "$USER_HOME/.local/share/lxqt/themes"
-        cp -r root_dir/usr/share/lxqt/themes/* "$USER_HOME/.local/share/lxqt/themes/"
+        # Ošetřeno || true proti pádu z důvodu chybějících souborů uvnitř deb balíčku
+        cp -r root_dir/usr/share/lxqt/themes/* "$USER_HOME/.local/share/lxqt/themes/" 2>/dev/null || true
     fi
-    cd ~ && rm -rf /tmp/lubuntu-rip
+    cd ~ && rm -rf /tmp/lubuntu-rip || true
 
     local CONF_SRC="$CONTENTS_DIR/lxqt/config"
     mkdir -p "$USER_HOME/.config/lxqt" "$USER_HOME/.config/pcmanfm-qt/lxqt"
@@ -182,8 +188,8 @@ configure_lxqt() {
 
     if [ -f "$CONF_SRC/lxqt-panel_amd64_no_about" ]; then
         mv /usr/bin/lxqt-panel /usr/bin/lxqt-panel.bak 2>/dev/null || true
-        cp "$CONF_SRC/lxqt-panel_amd64_no_about" /usr/bin/lxqt-panel
-        chmod +x /usr/bin/lxqt-panel
+        cp "$CONF_SRC/lxqt-panel_amd64_no_about" /usr/bin/lxqt-panel || true
+        chmod +x /usr/bin/lxqt-panel || true
     fi
 
     local SCRIPTS_SRC="$CONTENTS_DIR/lxqt/scripts"
@@ -194,7 +200,7 @@ configure_lxqt() {
     fi
 
     chmod +s $(which brightnessctl 2>/dev/null) 2>/dev/null || true
-    rm -f "/tmp/jas_notif_id"
+    rm -f "/tmp/jas_notif_id" || true
     if ! grep -q ".local/bin" "$USER_HOME/.bashrc"; then
         echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$USER_HOME/.bashrc"
     fi
@@ -208,15 +214,15 @@ configure_lxqt() {
     local TOUCHPAD_SRC="$CONTENTS_DIR/lxqt/config/touchpad.conf"
     mkdir -p /etc/X11/xorg.conf.d
     if [ -f "$TOUCHPAD_SRC" ]; then
-        cp "$TOUCHPAD_SRC" /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
+        cp "$TOUCHPAD_SRC" /etc/X11/xorg.conf.d/40-libinput-touchpad.conf || true
     fi
 
     local SESSION_CONF="$USER_HOME/.config/lxqt/session.conf"
     if [ ! -f "$SESSION_CONF" ]; then
         echo -e "[General]\nwindow_manager=xfwm4" > "$SESSION_CONF"
     else
-        sed -i 's/^window_manager=.*/window_manager=xfwm4/' "$SESSION_CONF"
-        grep -q "^window_manager=" "$SESSION_CONF" || sed -i '/^\[General\]/a window_manager=xfwm4' "$SESSION_CONF"
+        sed -i 's/^window_manager=.*/window_manager=xfwm4/' "$SESSION_CONF" || true
+        grep -q "^window_manager=" "$SESSION_CONF" || sed -i '/^\[General\]/a window_manager=xfwm4' "$SESSION_CONF" || true
     fi
 
     if [ -f "$XFWM_SRC" ]; then
@@ -226,17 +232,17 @@ configure_lxqt() {
         cat "$XFWM_SRC" >> "$TMP_XFWM"
         chmod +x "$TMP_XFWM"
         run_as_user "$TMP_XFWM"
-        rm -f "$TMP_XFWM"
+        rm -f "$TMP_XFWM" || true
     fi
 
     local LXQT_CONF="$USER_HOME/.config/lxqt/lxqt.conf"
     if [ -f "$LXQT_CONF" ]; then
-        sed -i "s/^ask_before_logout=.*/ask_before_logout=$CONF_OUT/" "$LXQT_CONF"
-        sed -i "s/^theme=.*/theme=Lubuntu Arc/" "$LXQT_CONF"
+        sed -i "s/^ask_before_logout=.*/ask_before_logout=$CONF_OUT/" "$LXQT_CONF" || true
+        sed -i "s/^theme=.*/theme=Lubuntu Arc/" "$LXQT_CONF" || true
         if grep -q "^language=" "$LXQT_CONF"; then
-            sed -i "s/^language=.*/language=$SYS_LANG_CODE/" "$LXQT_CONF"
+            sed -i "s/^language=.*/language=$SYS_LANG_CODE/" "$LXQT_CONF" || true
         else
-            sed -i "/^\[General\]/a language=$SYS_LANG_CODE" "$LXQT_CONF"
+            sed -i "/^\[General\]/a language=$SYS_LANG_CODE" "$LXQT_CONF" || true
         fi
     fi
 
@@ -258,12 +264,12 @@ configure_lxqt() {
     for app in /usr/share/applications/*.desktop; do
         [ -e "$app" ] || continue
         app_name=$(basename "$app")
-        cp "$app" "$LOCAL_APPS/"
-        sed -i "s|^Exec=|Exec=python3 $WRAPPER_BIN |" "$LOCAL_APPS/$app_name"
+        cp "$app" "$LOCAL_APPS/" || true
+        sed -i "s|^Exec=|Exec=python3 $WRAPPER_BIN |" "$LOCAL_APPS/$app_name" || true
     done
 
     for app in "${APPS_TO_HIDE[@]}"; do
-        [ -f "$LOCAL_APPS/$app" ] && sed -i '/^NoDisplay=/d; $ a NoDisplay=true' "$LOCAL_APPS/$app"
+        [ -f "$LOCAL_APPS/$app" ] && sed -i '/^NoDisplay=/d; $ a NoDisplay=true' "$LOCAL_APPS/$app" || true
     done
 
     local PANEL_CONF="$USER_HOME/.config/lxqt/panel.conf"
@@ -276,21 +282,21 @@ configure_lxqt() {
     esac
 
     if [ -f "$SESSION_CONF" ] && [ -n "$B_EXEC" ]; then
-        sed -i "s/^BROWSER=.*/BROWSER=$B_EXEC/" "$SESSION_CONF"
+        sed -i "s/^BROWSER=.*/BROWSER=$B_EXEC/" "$SESSION_CONF" || true
     fi
 
     if [ -f "$PANEL_CONF" ]; then
-        sed -i '/^apps\\/d' "$PANEL_CONF"
+        sed -i '/^apps\\/d' "$PANEL_CONF" || true
         if [ -n "$B_NAME" ]; then
-            sed -i "/^\[quicklaunch\]/a apps\\\\1\\\\desktop=$LOCAL_APPS/pcmanfm-qt.desktop\napps\\\\2\\\\desktop=$LOCAL_APPS/$B_NAME\napps\\\\size=2" "$PANEL_CONF"
+            sed -i "/^\[quicklaunch\]/a apps\\\\1\\\\desktop=$LOCAL_APPS/pcmanfm-qt.desktop\napps\\\\2\\\\desktop=$LOCAL_APPS/$B_NAME\napps\\\\size=2" "$PANEL_CONF" || true
         else
-            sed -i "/^\[quicklaunch\]/a apps\\\\1\\\\desktop=$LOCAL_APPS/pcmanfm-qt.desktop\napps\\\\size=1" "$PANEL_CONF"
+            sed -i "/^\[quicklaunch\]/a apps\\\\1\\\\desktop=$LOCAL_APPS/pcmanfm-qt.desktop\napps\\\\size=1" "$PANEL_CONF" || true
         fi
     fi
 
     local Q_CONF="$USER_HOME/.config/qterminal.org/qterminal.ini"
     mkdir -p "$(dirname "$Q_CONF")"
-    [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=false" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF"
+    [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=false" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF" || true
 
     local CONTEXT_CONF="$CONTENTS_DIR/lxqt/config/contextmenu.conf"
     local ACTION_DIR="$USER_HOME/.local/share/file-manager/actions"
@@ -308,15 +314,15 @@ configure_lxqt() {
         done < "$CONTEXT_CONF"
     fi
 
-    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local"
+    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" || true
 }
 
 configure_plasma() {
     log "Aplikuji specifické nastavení pro Plasmu (Motiv, Klíčenka)..."
     mkdir -p "$USER_HOME/.config"
 
-    echo -e "[General]\nconfirmLogout=$CONF_OUT" > "$USER_HOME/.config/ksmserverrc"
-    echo -e "[Wallet]\nEnabled=false" > "$USER_HOME/.config/kwalletrc"
+    echo -e "[General]\nconfirmLogout=$CONF_OUT" > "$USER_HOME/.config/ksmserverrc" || true
+    echo -e "[Wallet]\nEnabled=false" > "$USER_HOME/.config/kwalletrc" || true
 
     run_as_user "lookandfeeltool -a org.kde.plasma.twilight"
     
@@ -325,13 +331,13 @@ configure_plasma() {
         echo -e "[Theme]\nname=breeze-dark" > "$PLASMARC"
     else
         if grep -q "^\[Theme\]" "$PLASMARC"; then
-            sed -i '/^\[Theme\]/,/^\[/ s/^name=.*/name=breeze-dark/' "$PLASMARC"
+            sed -i '/^\[Theme\]/,/^\[/ s/^name=.*/name=breeze-dark/' "$PLASMARC" || true
         else
             echo -e "\n[Theme]\nname=breeze-dark" >> "$PLASMARC"
         fi
     fi
 
-    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config"
+    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" || true
 }
 
 # === 4. SYSTÉMOVÉ SLUŽBY A BOOT ===
@@ -339,8 +345,8 @@ configure_plasma() {
 setup_display_manager() {
     log "Nastavuji Display Manager a Autologin..."
     if [ "$DESKTOP_ENV" == "PLASMA" ]; then
-        echo "/usr/bin/sddm" > /etc/X11/default-display-manager 2>/dev/null
-        dpkg-reconfigure -f noninteractive sddm 2>/dev/null
+        echo "/usr/bin/sddm" > /etc/X11/default-display-manager 2>/dev/null || true
+        dpkg-reconfigure -f noninteractive sddm 2>/dev/null || true
         if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
             mkdir -p /etc/sddm.conf.d
             cat > /etc/sddm.conf.d/autologin.conf << EOF
@@ -350,31 +356,32 @@ Session=plasma
 EOF
         fi
     else
-        echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager 2>/dev/null
-        dpkg-reconfigure -f noninteractive lightdm 2>/dev/null
+        echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager 2>/dev/null || true
+        dpkg-reconfigure -f noninteractive lightdm 2>/dev/null || true
         if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
             mkdir -p /etc/lightdm/lightdm.conf.d
             echo -e "[Seat:*]\nautologin-user=$REAL_USER\nautologin-user-timeout=0" > /etc/lightdm/lightdm.conf.d/autologin.conf
-            sed -i 's/^#greeter-setup-script=.*/greeter-setup-script=\/usr\/bin\/numlockx on/' /etc/lightdm/lightdm.conf 2>/dev/null
+            sed -i 's/^#greeter-setup-script=.*/greeter-setup-script=\/usr\/bin\/numlockx on/' /etc/lightdm/lightdm.conf 2>/dev/null || true
         fi
     fi
 }
 
 setup_boot() {
     log "Nastavuji GRUB a Boot Logo..."
-    sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=$TIMEOUT/" /etc/default/grub
+    sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=$TIMEOUT/" /etc/default/grub || true
 
     if [ "$BOOT_LOGO" == "TRUE" ]; then
         log "Aplikuji grafický start (Plymouth)..."
-        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/' /etc/default/grub
-        plymouth-set-default-theme -R bgrt 2>/dev/null || plymouth-set-default-theme -R spinner 2>/dev/null
+        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/' /etc/default/grub || true
+        # Pojistka || true aby nespadl skript, když selže rebuild initramfs
+        plymouth-set-default-theme -R bgrt 2>/dev/null || plymouth-set-default-theme -R spinner 2>/dev/null || true
     else
         log "Ponechávám textový start..."
-        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet"/' /etc/default/grub
+        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet"/' /etc/default/grub || true
     fi
 
-    update-grub
-    systemctl set-default graphical.target
+    update-grub || true
+    systemctl set-default graphical.target || true
 }
 
 # ==============================================================================
