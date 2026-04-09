@@ -10,16 +10,21 @@ BASE_DIR="$(dirname "$(realpath "$0")")"
 CONTENTS_DIR="$BASE_DIR/.contents"
 GLOBAL_CONFIG="$CONTENTS_DIR/setup-config.txt"
 
-# Bezpečnější detekce původního uživatele
-REAL_USER=$(logname 2>/dev/null || who am i | awk '{print $1}')
+# Bezpečnější detekce původního uživatele (hledá UID 1000+)
+REAL_USER=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 {print $1}' | head -n 1)
 if [ -z "$REAL_USER" ]; then
-    REAL_USER=$(ls /home | head -n 1)
+    echo -e "\033[1;31mCHYBA: Nepodařilo se najít žádného běžného uživatele (UID 1000+).\033[0m" >&2
+    exit 1
 fi
-USER_HOME="/home/$REAL_USER"
+# Přesná detekce home složky podle databáze uživatelů
+USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 
 # Detekce jazyka
 SYS_LOCALE=$(grep "^LANG=" /etc/default/locale | cut -d'=' -f2 | tr -d '"' || echo "en_US.UTF-8")
 SYS_LANG_CODE="${SYS_LOCALE%%.*}"
+
+# Přidána detekce architektury (amd64 nebo arm64)
+SYS_ARCH=$(dpkg --print-architecture)
 
 # === POMOCNÉ FUNKCE ===
 
@@ -33,14 +38,12 @@ error() {
 }
 
 run_as_user() {
-    # Přidáno || true, aby selhání D-Bus nezabilo instalaci
     su - "$REAL_USER" -c "dbus-launch $1" 2>/dev/null || true
 }
 
 get_setting() {
     local key="$1"
     if [ -f "$GLOBAL_CONFIG" ]; then
-        # Přidáno cut -d'#' -f1 pro odříznutí komentářů
         grep -i "^${key}=" "$GLOBAL_CONFIG" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '[:space:]' || true
     fi
 }
@@ -49,7 +52,6 @@ get_section() {
     local file="$1"
     local section="$2"
     if [ -f "$file" ]; then
-        # Přidáno || true pro ochranu proti prázdným sekcím
         sed -n "/^\[$section\]/,/^\[/p" "$file" | grep -v '^\[.*\]' | grep -vE '^\s*(#|$)' | xargs || true
     fi
 }
@@ -60,53 +62,125 @@ init_setup() {
     [ "$EUID" -ne 0 ] && error "Nutno spustit jako root (sudo)"
     
     log "Detekován systémový jazyk instalace: $SYS_LANG_CODE"
+    log "Instalace bude provedena pro uživatele: $REAL_USER"
+    sleep 1
 
-    echo "--------------------------------------------------"
-    echo "Vyber desktopové prostředí"
+    # HLAVNÍ INTERAKTIVNÍ SMYČKA
     while true; do
-        echo "1) KDE Plasma"
-        echo "2) LXQT"
-        read -p "Zadej číslo (1 nebo 2), pak ENTER: " DISTRO_ANS
-        case "$DISTRO_ANS" in
-            1) DESKTOP_ENV="PLASMA"; break ;;
-            2) DESKTOP_ENV="LXQT"; break ;;
-            *) echo -e "\033[1;31mNeplatná volba! Musíš zadat 1 nebo 2.\033[0m" ;;
-        esac
+        clear
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo -e "\033[1;36m                 DEBIAN SETUP                     \033[0m"
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo -e " \033[1;33m(Kdykoliv zadej 'R' pro reset a návrat na začátek)\033[0m"
+        echo -e "\033[1;36m--------------------------------------------------\033[0m"
+        echo ""
+
+        echo "1. Vyber desktopové prostředí"
+        while true; do
+            echo "1) KDE Plasma"
+            echo "2) LXQT"
+            read -p "Zadej číslo (1 nebo 2): " DISTRO_ANS
+            case "$DISTRO_ANS" in
+                1) DESKTOP_ENV="PLASMA"; DESKTOP_STR="KDE Plasma"; break ;;
+                2) DESKTOP_ENV="LXQT"; DESKTOP_STR="LXQt"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
+        echo "--------------------------------------------------"
+        echo "2. Vyber prohlížeč"
+        while true; do
+            echo "1) Chrome"
+            echo "2) Chromium"
+            echo "3) Brave"
+            echo "4) Firefox"
+            echo "5) Nic"
+            read -p "Zadej číslo (1 až 5): " BROWSER_CHOICE
+            case "$BROWSER_CHOICE" in
+                1) BROWSER_STR="Google Chrome"; break ;;
+                2) BROWSER_STR="Chromium"; break ;;
+                3) BROWSER_STR="Brave"; break ;;
+                4) BROWSER_STR="Firefox"; break ;;
+                5) BROWSER_STR="Žádný"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej číslo 1 až 5 nebo R.\033[0m" ;;
+            esac
+        done
+
+        echo "--------------------------------------------------"
+        echo "3. Vyber kancelářský balík"
+        while true; do
+            echo "1) LibreOffice"
+            echo "2) OnlyOffice"
+            echo "3) Nic"
+            read -p "Zadej číslo (1 až 3): " OFFICE_CHOICE
+            case "$OFFICE_CHOICE" in
+                1) OFFICE_STR="LibreOffice"; break ;;
+                2) OFFICE_STR="OnlyOffice"; break ;;
+                3) OFFICE_STR="Žádný"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej číslo 1 až 3 nebo R.\033[0m" ;;
+            esac
+        done
+
+        echo "--------------------------------------------------"
+        echo "4. Chceš nastavit automatické přihlašování?"
+        while true; do
+            echo "1) Ano"
+            echo "2) Ne"
+            read -p "Zadej číslo (1 nebo 2): " AUTO_ANS
+            case "$AUTO_ANS" in
+                1) AUTOLOGIN_REQ="TRUE"; AUTOLOGIN_STR="Ano"; break ;;
+                2) AUTOLOGIN_REQ="FALSE"; AUTOLOGIN_STR="Ne"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
+        echo "--------------------------------------------------"
+        echo "5. Omezit sudo pouze na heslo ROOT? (Běžný uživatel ztratí administrátorská práva)"
+        while true; do
+            echo "1) Ano (Max. zabezpečení)"
+            echo "2) Ne (Ponechat sudo běžnému uživateli)"
+            read -p "Zadej číslo (1 nebo 2): " ROOT_ANS
+            case "$ROOT_ANS" in
+                1) ROOT_ADMIN_ONLY="TRUE"; ROOT_STR="Ano (Odebrat sudo)"; break ;;
+                2) ROOT_ADMIN_ONLY="FALSE"; ROOT_STR="Ne (Ponechat sudo)"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
+        # SOUHRN A POTVRZENÍ
+        clear
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo -e "\033[1;36m                 SOUHRN NASTAVENÍ                 \033[0m"
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo " Cílový uživatel:  $REAL_USER"
+        echo " Prostředí:        $DESKTOP_STR"
+        echo " Prohlížeč:        $BROWSER_STR"
+        echo " Office:           $OFFICE_STR"
+        echo " Autologin:        $AUTOLOGIN_STR"
+        echo " Zámek Sudo:       $ROOT_STR"
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo "Je toto nastavení správné?"
+        while true; do
+            echo "1) Ano (Spustit instalaci)"
+            echo "2) Ne (Začít znovu)"
+            read -p "Zadej číslo (1 nebo 2, případně R pro restart): " CONFIRM_ANS
+            case "$CONFIRM_ANS" in
+                1) break 2 ;; # Ukončí vnitřní i vnější smyčku a jde se instalovat
+                2|r|R) continue 2 ;; # Restartuje hlavní smyčku a zahodí odpovědi
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
     done
 
     # Definice lokálního konfiguráku hned po výběru prostředí
     LOCAL_CONFIG="$CONTENTS_DIR/$(echo "$DESKTOP_ENV" | tr '[:upper:]' '[:lower:]')/config.txt"
 
-    echo "--------------------------------------------------"
-    echo "Vyber prohlížeč"
-    while true; do
-        echo "1) Chrome"
-        echo "2) Chromium"
-        echo "3) Brave"
-        echo "4) Firefox"
-        echo "5) Nic"
-        read -p "Zadej číslo (1 až 5), pak ENTER: " BROWSER_CHOICE
-        if [[ "$BROWSER_CHOICE" =~ ^[1-5]$ ]]; then
-            break
-        else
-            echo -e "\033[1;31mZadej číslo od 1 do 5!\033[0m"
-        fi
-    done
-
-    echo "--------------------------------------------------"
-    echo "Chceš nastavit automatické přihlašování?"
-    while true; do
-        echo "1) Ano"
-        echo "2) Ne"
-        read -p "Zadej číslo (1 nebo 2), pak ENTER: " AUTO_ANS
-        case "$AUTO_ANS" in
-            1) AUTOLOGIN_REQ="TRUE"; break ;;
-            2) AUTOLOGIN_REQ="FALSE"; break ;;
-            *) echo -e "\033[1;31mZadej 1 pro Ano nebo 2 pro Ne!\033[0m" ;;
-        esac
-    done
-
-    # Načtení globálních nastavení
+    # Načtení zbytku globálních nastavení
     TIMEOUT=$(get_setting "GRUB_TIMEOUT")
     TIMEOUT=${TIMEOUT:-0}
     
@@ -114,29 +188,26 @@ init_setup() {
     [[ "$CONF_OUT_RAW" == "TRUE" ]] && CONF_OUT="true" || CONF_OUT="false"
     
     BOOT_LOGO=$(get_setting "BOOT_LOGO" | tr '[:lower:]' '[:upper:]')
-
-    ROOT_ADMIN_RAW=$(get_setting "ROOT_ADMIN_ONLY" | tr '[:lower:]' '[:upper:]')
-    [[ "$ROOT_ADMIN_RAW" == "TRUE" ]] && ROOT_ADMIN_ONLY="TRUE" || ROOT_ADMIN_ONLY="FALSE"
 }
 
 prepare_system() {
     log "Základní příprava systému a sítě..."
     apt-get update -qq
-    apt-get install -y sudo curl wget dpkg-dev git dbus-x11 numlockx
+    # Přidán plymouth a plymouth-themes
+    apt-get install -y sudo curl wget dpkg-dev git dbus-x11 numlockx plymouth plymouth-themes
     
     usermod -aG sudo,audio,video,plugdev "$REAL_USER" || true
 
     apt-get purge -y ifupdown || true
     rm -rf /etc/network/interfaces.d/* || true
     
-    # Nahrazeno printf - čisté a krátké
     printf "auto lo\niface lo inet loopback\n" > /etc/network/interfaces
 }
 
 # === 2. INSTALACE BALÍČKŮ A PROHLÍŽEČŮ ===
 
 install_packages() {
-    log "Načítám konfigurace a instaluji balíčky..."
+    log "Načítám konfigurace a instaluji balíčky pro architekturu: $SYS_ARCH..."
     
     local ALL_PKGS=$(get_section "$GLOBAL_CONFIG" "INSTALL")
     ALL_PKGS+=" $(get_section "$LOCAL_CONFIG" "CORE_PACKAGES")"
@@ -144,23 +215,58 @@ install_packages() {
     
     read -r -a PKG_ARRAY <<< "$ALL_PKGS"
     
-    # Bezpečnostní pojistka proti prázdnému poli
     if [ ${#PKG_ARRAY[@]} -gt 0 ]; then
         apt-get install -y --no-install-recommends "${PKG_ARRAY[@]}"
     fi
 
     log "Instaluji prohlížeč..."
     case $BROWSER_CHOICE in
-        1) wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && apt-get install -y /tmp/chrome.deb || true ;;
+        1) 
+            if [ "$SYS_ARCH" == "arm64" ]; then
+                log "UPOZORNĚNÍ: Google Chrome nevydává balíčky pro ARM. Instaluji jako náhradu Chromium."
+                apt-get install -y chromium chromium-l10n || true
+            else
+                wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && apt-get install -y /tmp/chrome.deb || true 
+            fi
+            ;;
         2) apt-get install -y chromium chromium-l10n || true ;;
         3) curl -fsS https://dl.brave.com/install.sh | sh || true ;;
         4) apt-get install -y firefox-esr firefox-esr-l10n-cs || true ;;
     esac
 
-    log "Přidávám repozitář a instaluji AnyDesk..."
-    curl -fsSL https://keys.anydesk.com/repos/DEB-GPG-KEY | gpg --dearmor -o /usr/share/keyrings/anydesk.gpg 2>/dev/null || true
-    echo "deb [signed-by=/usr/share/keyrings/anydesk.gpg] http://deb.anydesk.com/ all main" > /etc/apt/sources.list.d/anydesk-stable.list || true
-    apt-get update -qq && apt-get install -y anydesk || true
+    log "Instaluji kancelářský balík..."
+    case $OFFICE_CHOICE in
+        1) apt-get install -y libreoffice libreoffice-l10n-cs || true ;;
+        2) 
+            if [ "$SYS_ARCH" == "arm64" ]; then
+                wget -qO /tmp/onlyoffice.deb https://download.onlyoffice.com/install/desktop/editors/linux/onlyoffice-desktopeditors_arm64.deb && apt-get install -y /tmp/onlyoffice.deb || true
+            else
+                wget -qO /tmp/onlyoffice.deb https://download.onlyoffice.com/install/desktop/editors/linux/onlyoffice-desktopeditors_amd64.deb && apt-get install -y /tmp/onlyoffice.deb || true
+            fi
+            ;;
+    esac
+
+    if grep -iq "^INSTALL_RUSTDESK=TRUE" "$GLOBAL_CONFIG" || grep -iq "^INSTALL_RUSTDESK=TRUE" "$LOCAL_CONFIG"; then
+        log "Instalace RustDesku povolena. Zjišťuji nejnovější verzi..."
+        
+        # Filtr pro GitHub API dynamicky podle architektury (x86_64 vs aarch64)
+        if [ "$SYS_ARCH" == "arm64" ]; then
+            RUSTDESK_GREP="browser_download_url.*aarch64\.deb"
+        else
+            RUSTDESK_GREP="browser_download_url.*x86_64\.deb"
+        fi
+
+        LATEST_URL=$(curl -sL https://api.github.com/repos/rustdesk/rustdesk/releases/latest | grep -E "$RUSTDESK_GREP" | cut -d '"' -f 4 | head -n 1)
+        
+        if [ -n "$LATEST_URL" ]; then
+            log "Stahuji RustDesk pro $SYS_ARCH z: $LATEST_URL"
+            wget -qO /tmp/rustdesk.deb "$LATEST_URL"
+            apt-get install -y /tmp/rustdesk.deb || true
+            rm -f /tmp/rustdesk.deb
+        else
+            log "CHYBA: Nepodařilo se získat odkaz na nejnovější RustDesk. Přeskakuji."
+        fi
+    fi
 }
 
 setup_auto_updates() {
@@ -176,7 +282,6 @@ setup_auto_updates() {
         fi
     fi
 
-    # Všechny konfigy pro upgrady na jednom řádku
     printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Download-Upgradeable-Packages "1";\nAPT::Periodic::AutocleanInterval "7";\nAPT::Periodic::Unattended-Upgrade "1";\n' > /etc/apt/apt.conf.d/20auto-upgrades
 }
 
@@ -201,7 +306,6 @@ configure_lxqt() {
         wget "http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/$FILE_NAME" -O lubuntu-artwork.deb || true
         dpkg-deb -x lubuntu-artwork.deb root_dir || true
         mkdir -p "$USER_HOME/.local/share/lxqt/themes"
-        # Ošetřeno || true proti pádu z důvodu chybějících souborů uvnitř deb balíčku
         cp -r root_dir/usr/share/lxqt/themes/* "$USER_HOME/.local/share/lxqt/themes/" 2>/dev/null || true
     fi
     cd ~ && rm -rf /tmp/lubuntu-rip || true
@@ -250,21 +354,14 @@ configure_lxqt() {
         grep -q "^window_manager=" "$SESSION_CONF" || sed -i '/^\[General\]/a window_manager=xfwm4' "$SESSION_CONF" || true
     fi
 
-if [ -f "$XFWM_SRC" ]; then
+    if [ -f "$XFWM_SRC" ]; then
         log "Aplikuji externí konfiguraci XFWM4..."
         sed -i 's/\r$//' "$XFWM_SRC"
         
-        # 1. Přesuneme to do /tmp, aby k tomu měl běžný uživatel 100% přístup
         cp "$XFWM_SRC" /tmp/xfwm-apply.sh
         chown "$REAL_USER:$REAL_USER" /tmp/xfwm-apply.sh
-        
-        # 2. Vynutíme vytvoření cílových složek, aby xfconf-query nespadl do prázdna
         su - "$REAL_USER" -c "mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml"
-        
-        # 3. Spustíme to v D-Busu
         su - "$REAL_USER" -c "dbus-run-session bash /tmp/xfwm-apply.sh" || true
-        
-        # 4. Uklidíme (žádný odpad v systému nezůstane)
         rm -f /tmp/xfwm-apply.sh
     fi
 
@@ -351,41 +448,34 @@ if [ -f "$XFWM_SRC" ]; then
 }
 
 configure_plasma() {
-    log "Aplikuji specifické nastavení pro Plasmu (Čisté zkratky a GTK Fix)..."
+    log "Aplikuji specifické nastavení pro Plasmu..."
     
     mkdir -p "$USER_HOME/.config"
 
-    # 1. Základní chování (Odhlášení a Klíčenka)
     echo -e "[General]\nconfirmLogout=$CONF_OUT" > "$USER_HOME/.config/ksmserverrc" || true
     echo -e "[Wallet]\nEnabled=false" > "$USER_HOME/.config/kwalletrc" || true
 
-    # 2. GTK Fix pro Chrome (aby okno mělo všechna tlačítka)
     mkdir -p "$USER_HOME/.config/gtk-3.0"
     echo -e "[Settings]\ngtk-decoration-layout=icon:minimize,maximize,close" > "$USER_HOME/.config/gtk-3.0/settings.ini" || true
 
-    # 3. ÚKLID: Smažeme ty zbytečné zástupce z minula, pokud tam zůstali
     rm -f "$USER_HOME/.local/share/applications/htop.desktop" || true
     rm -f "$USER_HOME/.local/share/applications/custom-htop.desktop" || true
 
-    # 4. ZKRATKY: Nabindujeme to přímo na systémové .desktop soubory
     local SHORTCUTS_CONF="$USER_HOME/.config/kglobalshortcutsrc"
     touch "$SHORTCUTS_CONF"
     
-    # Zkratka pro Htop (Ctrl+Shift+Esc) - Plasma si to sama najde v /usr/share/applications/htop.desktop
     if ! grep -q "^\[htop.desktop\]" "$SHORTCUTS_CONF"; then
         echo -e "\n[htop.desktop]\n_launch=Ctrl+Shift+Esc,none,htop" >> "$SHORTCUTS_CONF"
     else
         sed -i '/^\[htop.desktop\]/,/^\[/ s/^_launch=.*/_launch=Ctrl+Shift+Esc,none,htop/' "$SHORTCUTS_CONF" || true
     fi
 
-    # Zkratka pro Výstřižky (Meta+Shift+S) - Využije systémový org.kde.spectacle.desktop
     if ! grep -q "^\[org.kde.spectacle.desktop\]" "$SHORTCUTS_CONF"; then
         echo -e "\n[org.kde.spectacle.desktop]\nRectangularRegionScreenShot=Meta+Shift+S,Meta+Shift+Print,Draw a rectangle to take a screenshot" >> "$SHORTCUTS_CONF"
     else
         sed -i '/^\[org.kde.spectacle.desktop\]/,/^\[/ s/^RectangularRegionScreenShot=.*/RectangularRegionScreenShot=Meta+Shift+S,Meta+Shift+Print,Draw a rectangle to take a screenshot/' "$SHORTCUTS_CONF" || true
     fi
 
-    # 5. Vizuál (Twilight motiv a tmavý panel)
     run_as_user "lookandfeeltool -a org.kde.plasma.twilight"
     
     local PLASMARC="$USER_HOME/.config/plasmarc"
@@ -399,7 +489,6 @@ configure_plasma() {
         fi
     fi
 
-    # Nastavení práv, aby na to mohl user i systém
     chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" || true
 }
 
@@ -415,7 +504,6 @@ setup_display_manager() {
         
         if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
             mkdir -p /etc/sddm.conf.d
-            # Kompaktní zápis SDDM konfigu
             printf "[Autologin]\nUser=%s\nSession=plasma\nRelogin=true\n" "$REAL_USER" > /etc/sddm.conf.d/autologin.conf
         fi
     else
@@ -426,7 +514,6 @@ setup_display_manager() {
         
         if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
             mkdir -p /etc/lightdm/lightdm.conf.d
-            # Kompaktní zápis LightDM konfigu
             printf "[Seat:*]\nautologin-user=%s\nautologin-user-timeout=0\n" "$REAL_USER" > /etc/lightdm/lightdm.conf.d/autologin.conf
             sed -i 's/^#greeter-setup-script=.*/greeter-setup-script=\/usr\/bin\/numlockx on/' /etc/lightdm/lightdm.conf 2>/dev/null || true
         fi
@@ -440,7 +527,6 @@ setup_boot() {
     if [ "$BOOT_LOGO" == "TRUE" ]; then
         log "Aplikuji grafický start (Plymouth)..."
         sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/' /etc/default/grub || true
-        # Pojistka || true aby nespadl skript, když selže rebuild initramfs
         plymouth-set-default-theme -R bgrt 2>/dev/null || plymouth-set-default-theme -R spinner 2>/dev/null || true
     else
         log "Ponechávám textový start..."
@@ -452,15 +538,19 @@ setup_boot() {
 }
 
 admin_security() {
-        # === 5. FINÁLNÍ ZABEZPEČENÍ ===
+    # === 5. FINÁLNÍ ZABEZPEČENÍ ===
     if [ "$ROOT_ADMIN_ONLY" == "TRUE" ]; then
-        log "Zabezpečuji systém: Odstraňuji uživatele '$REAL_USER' ze skupiny sudo..."
-    
-        # Vyhození ze skupiny sudo a smazání případných výjimek
-        deluser "$REAL_USER" sudo 2>/dev/null || true
-        rm -f "/etc/sudoers.d/$REAL_USER" 2>/dev/null || true
-    
-        log "Uživatel '$REAL_USER' byl degradován. Pro správu systému bude vyžadováno heslo ROOT."
+        log "Zabezpečuji systém: Pokus o odebrání uživatele '$REAL_USER' ze skupiny sudo..."
+        
+        # Ochranný mechanismus: Ověření, zda je účet root vůbec aktivní (nemá zamčené heslo '!*' v /etc/shadow)
+        if grep -q '^root:[!\*]' /etc/shadow; then
+            log "CHYBA: Účet root je zamčen nebo nemá nastavené heslo!"
+            log "Bezpečnostní pojistka: Ponechávám uživateli '$REAL_USER' práva sudo, jinak by se systém zcela zablokoval."
+        else
+            deluser "$REAL_USER" sudo 2>/dev/null || true
+            rm -f "/etc/sudoers.d/$REAL_USER" 2>/dev/null || true
+            log "Uživatel '$REAL_USER' byl úspěšně degradován. Pro správu systému bude nyní vyžadováno heslo ROOT."
+        fi
     fi
 }
 
