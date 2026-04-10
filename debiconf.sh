@@ -398,17 +398,19 @@ configure_lxqt() {
         grep -q "^window_manager=" "$SESSION_CONF" || sed -i '/^\[General\]/a window_manager=xfwm4' "$SESSION_CONF" || true
     fi
 
-if [ -f "$XFWM_SRC" ]; then
+    if [ -f "$XFWM_SRC" ]; then
         log "Aplikuji externí konfiguraci XFWM4..."
         sed -i 's/\r$//' "$XFWM_SRC"
         
         cp "$XFWM_SRC" /tmp/xfwm-apply.sh
         chown "$REAL_USER:$REAL_USER" /tmp/xfwm-apply.sh
         
-        # Vytvoří to root, práva se automaticky opraví na konci celého skriptu
+        # Vytvoření složky A OKAMŽITÉ PŘEDÁNÍ PRÁV, aby xfconfd mohl zapisovat!
         mkdir -p "$USER_HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
+        chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config/xfce4"
         
-        su - "$REAL_USER" -c "dbus-run-session bash /tmp/xfwm-apply.sh" || true
+        # D-bus session s pojistkou (sleep), aby démon neumřel před zápisem
+        su - "$REAL_USER" -c "dbus-run-session bash -c 'bash /tmp/xfwm-apply.sh; sleep 2'" || true
         rm -f /tmp/xfwm-apply.sh
     fi
 
@@ -453,6 +455,12 @@ if [ -f "$XFWM_SRC" ]; then
     # Překlad vlnovky u vlastní ikony menu na absolutní cestu
     if [ -f "$PANEL_CONF" ]; then
         sed -i "s|icon=~/.local|icon=$USER_HOME/.local|g" "$PANEL_CONF" || true
+    fi
+
+    local ICONS_SRC="$CONTENTS_DIR/lxqt/icons"
+    if [ -d "$ICONS_SRC" ]; then
+        log "Kopíruji vlastní ikony pro LXQt..."
+        cp -r "$ICONS_SRC" "$USER_HOME/.local/share/" 2>/dev/null || true
     fi
     
     case $BROWSER_CHOICE in
