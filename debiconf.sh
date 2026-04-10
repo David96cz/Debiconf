@@ -359,6 +359,7 @@ install_packages() {
             # apt-get install nainstaluje i chybějící závislosti
             apt-get install -y /tmp/rustdesk.deb || true
             rm -f /tmp/rustdesk.deb
+            pkill -f "rustdesk" 2>/dev/null || true
             log "RustDesk byl úspěšně nainstalován."
         else
             log "CHYBA: Nepodařilo se získat odkaz na RustDesk. Přeskakuji."
@@ -663,6 +664,36 @@ configure_lxqt() {
         set_default_app "application/vnd.openxmlformats-officedocument.wordprocessingml.document" "onlyoffice-desktopeditors.desktop"
     fi
     # -------------------------------------
+
+    # --- AUTORUN APLIKACÍ ---
+    log "Zpracovávám sekci [AUTORUN] pro aplikace po spuštění..."
+    local AUTOSTART_DIR="$USER_HOME/.config/autostart"
+    mkdir -p "$AUTOSTART_DIR"
+
+    # Přečteme obsah sekce [AUTORUN] z tvého config.txt
+    AUTORUN_APPS=$(awk '/^\[AUTORUN\]/{flag=1; next} /^\[/{flag=0} flag && NF' "$CONTENTS_DIR/lxqt/config.txt")
+
+    if [ -n "$AUTORUN_APPS" ]; then
+        for APP in $AUTORUN_APPS; do
+            log "Přidávám '$APP' do autostartu..."
+            local DEST_DESKTOP="$AUTOSTART_DIR/${APP}-autostart.desktop"
+            
+            # Vytvoření univerzálního autostart souboru
+            echo "[Desktop Entry]" > "$DEST_DESKTOP"
+            echo "Type=Application" >> "$DEST_DESKTOP"
+            echo "Name=Autostart $APP" >> "$DEST_DESKTOP"
+            echo "Exec=$APP" >> "$DEST_DESKTOP"
+            echo "Hidden=false" >> "$DEST_DESKTOP"
+            echo "NoDisplay=false" >> "$DEST_DESKTOP"
+            echo "X-GNOME-Autostart-enabled=true" >> "$DEST_DESKTOP"
+        done
+        
+        # Oprava práv – tohle je důležité, aby si LXQt nestěžovalo, že to vlastní root
+        chown -R "$REAL_USER:$REAL_USER" "$AUTOSTART_DIR"
+    else
+        log "Žádné aplikace v sekci [AUTORUN] nebyly nalezeny."
+    fi
+    # ------------------------
 
     chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" || true
 }
