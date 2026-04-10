@@ -367,27 +367,30 @@ install_packages() {
 }
 
 setup_auto_updates() {
-    log "Konfiguruji absolutní automatické aktualizace a likviduji otravné notifikace..."
+    log "Konfiguruji profesionální automatické aktualizace..."
 
-    # 1. Odstranění Discover notifikátoru (KDE Plasma), aby neotravoval v liště
-    log "Zabíjím plasma-discover-notifier..."
-    apt-get purge -y plasma-discover-notifier 2>/dev/null || true
+    # 1. Likvidace notifikátorů
+    log "Odstraňuji zbytečné notifikátory..."
+    apt-get purge -y plasma-discover-notifier packagekit 2>/dev/null || true
 
-    # 2. Vypnutí napůl funkčního debianího unattended-upgrades (aby neblokoval apt pro náš cron)
+    # 2. Vypnutí standardních timerů, aby neblokovaly zámek /var/lib/dpkg/lock-frontend
     log "Deaktivuji výchozí apt timery..."
-    printf 'APT::Periodic::Update-Package-Lists "0";\nAPT::Periodic::Unattended-Upgrade "0";\n' > /etc/apt/apt.conf.d/20auto-upgrades 2>/dev/null || true
+    printf 'APT::Periodic::Update-Package-Lists "0";\nAPT::Periodic::Unattended-Upgrade "0";\n' > /etc/apt/apt.conf.d/20auto-upgrades
     systemctl disable --now apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
 
-    # 3. Nasazení neprůstřelného cron.daily skriptu pro VŠECHNY repozitáře
-    log "Vytvářím cron.daily skript pro plný update systému..."
-    
-    echo '#!/bin/bash' > /etc/cron.daily/auto-update-everything
-    echo '# Aktualizuje komplet vsechno vcetne Chrome a WineHQ' >> /etc/cron.daily/auto-update-everything
-    echo '/usr/bin/apt-get update -qq' >> /etc/cron.daily/auto-update-everything
-    echo 'DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get upgrade -y -q' >> /etc/cron.daily/auto-update-everything
-    echo '/usr/bin/apt-get autoremove -y -q' >> /etc/cron.daily/auto-update-everything
+    # 3. Nasazení tvého skriptu
+    local SRC_SCRIPT="$CONTENTS_DIR/lxqt/scripts/system-autoupdate"
+    local DEST_SCRIPT="/etc/cron.daily/system-autoupdate"
 
-    chmod +x /etc/cron.daily/auto-update-everything
+    if [ -f "$SRC_SCRIPT" ]; then
+        log "Instaluji autoupdate skript do cron.daily..."
+        cp "$SRC_SCRIPT" "$DEST_SCRIPT"
+        chmod +x "$DEST_SCRIPT"
+        # Oprava vlastnictví na roota, aby cron neměl problém
+        chown root:root "$DEST_SCRIPT"
+    else
+        log "CHYBA: Zdrojový skript nebyl nalezen v $SRC_SCRIPT!"
+    fi
 }
 
 # === 3. KONFIGURACE DESKTOPOVÝCH PROSTŘEDÍ ===
@@ -595,21 +598,25 @@ configure_lxqt() {
         done < "$CONTEXT_CONF"
     fi
 
-    # --- VYTVOŘENÍ ZÁSTUPCE PRO NEW-SHORTCUT.SH V MENU ---
-    log "Vytvářím zástupce pro skript new-shortcut v menu aplikací..."
-    local SHORTCUT_DESKTOP="$LOCAL_APPS/new-shortcut.desktop"
-    
-    echo "[Desktop Entry]" > "$SHORTCUT_DESKTOP"
-    echo "Type=Application" >> "$SHORTCUT_DESKTOP"
-    echo "Name=Vytvořit zástupce" >> "$SHORTCUT_DESKTOP"
-    echo "Comment=Spustí skript pro nový zástupce" >> "$SHORTCUT_DESKTOP"
-    echo "Exec=$USER_HOME/.local/bin/new-shortcut.sh" >> "$SHORTCUT_DESKTOP"
-    echo "Icon=system-run" >> "$SHORTCUT_DESKTOP"
-    echo "Terminal=true" >> "$SHORTCUT_DESKTOP"
-    echo "Categories=Utility;" >> "$SHORTCUT_DESKTOP"
-    
-    chmod +x "$SHORTCUT_DESKTOP" || true
-    # -----------------------------------------------------
+    # --- NASAZENÍ ZÁSTUPCE Z ACTIONS.CONF ---
+    log "Nasazuji zástupce pro skript z actions.conf..."
+    local SRC_ACTIONS="$CONTENTS_DIR/lxqt/actions.conf" 
+    local DEST_DESKTOP="$LOCAL_APPS/new-shortcut.desktop"
+
+    if [ -f "$SRC_ACTIONS" ]; then
+        # Zkopírujeme soubor na místo
+        cp "$SRC_ACTIONS" "$DEST_DESKTOP"
+        
+        # Nahradíme vlnovku absolutní cestou (desktop entry vlnovku v Exec neumí)
+        # Používáme | jako oddělovač, aby se to netlouklo s lomítky v cestě
+        sed -i "s|~/.local|$USER_HOME/.local|g" "$DEST_DESKTOP"
+        
+        chmod +x "$DEST_DESKTOP"
+        log "Zástupce 'Vytvořit zástupce' byl úspěšně vytvořen a upraven."
+    else
+        log "CHYBA: Zdrojový soubor $SRC_ACTIONS nebyl nalezen!"
+    fi
+    # ----------------------------------------
 
     # --- VÝCHOZÍ APLIKACE (MIME TYPES) ---
     log "Nastavuji výchozí aplikace (FeatherPad, GDebi, Office, Wine, VLC)..."
@@ -788,16 +795,13 @@ setup_boot() {
 }
 
 admin_security() {
-    # === 5. FINÁLNÍ ZABEZPEČENÍ A HESLA ===
     if [ "$ROOT_ADMIN_ONLY" == "TRUE" ]; then
         log "Zabezpečuji systém: Nastavuji sudo na vyžadování hesla ROOT..."
         
-        # Ochranný mechanismus: Ověření, zda je účet root vůbec aktivní
         if grep -q '^root:[!\*]' /etc/shadow; then
             log "CHYBA: Účet root je zamčen nebo nemá nastavené heslo!"
             log "Bezpečnostní pojistka: Sudo bude dál chtít heslo uživatele, jinak by se systém zablokoval."
         else
-            # Čisté řešení přes sudoers.d
             echo 'Defaults rootpw' > /etc/sudoers.d/01-rootpw
             chmod 0440 /etc/sudoers.d/01-rootpw
             log "Sudo nyní bezpečně vyžaduje heslo ROOT."
