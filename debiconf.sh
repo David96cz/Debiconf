@@ -624,6 +624,8 @@ setup_boot() {
         sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet"/' /etc/default/grub || true
     fi
 
+    hardware_detection
+
     update-grub || true
     systemctl set-default graphical.target || true
 }
@@ -642,6 +644,43 @@ admin_security() {
             rm -f "/etc/sudoers.d/$REAL_USER" 2>/dev/null || true
             log "Uživatel '$REAL_USER' byl úspěšně degradován. Pro správu systému bude nyní vyžadováno heslo ROOT."
         fi
+    fi
+}
+
+hardware_detection() {
+    log "Provádím detekci hardwaru pro specifické parametry jádra..."
+    
+    local GRUB_FILE="/etc/default/grub"
+    local EXTRA_CMDLINE=""
+
+    # 1. Detekce Bay Trail (Celeron/Pentium/Atom z této rodiny trpící na C-states zamrzání)
+    if grep -iqE "(N28|N29|J19|N35|J29|Z37)[0-9][0-9]" /proc/cpuinfo 2>/dev/null; then
+        log "Detekován procesor rodiny Intel Bay Trail. Přidávám opravu C-states..."
+        EXTRA_CMDLINE+=" intel_idle.max_cstate=1"
+    fi
+
+    # 2. Detekce AMD Grafiky (přepnutí starých karet z radeon na amdgpu)
+    if lspci -nn 2>/dev/null | grep -i vga | grep -iqE "amd|radeon"; then
+        log "Detekována AMD grafika. Vynucuji moderní amdgpu ovladač pro starší karty..."
+        EXTRA_CMDLINE+=" radeon.cik_support=0 amdgpu.cik_support=1 radeon.si_support=0 amdgpu.si_support=1"
+    fi
+
+    # Pokud jsme něco našli, bezpečně to zapíšeme do GRUBu
+    if [ -n "$EXTRA_CMDLINE" ] && [ -f "$GRUB_FILE" ]; then
+        local CURRENT_CMDLINE=$(grep "^GRUB_CMDLINE_LINUX_DEFAULT=" "$GRUB_FILE" | cut -d'"' -f2 | cut -d"'" -f2)
+        
+        for param in $EXTRA_CMDLINE; do
+            if ! echo "$CURRENT_CMDLINE" | grep -q "$param"; then
+                CURRENT_CMDLINE="$CURRENT_CMDLINE $param"
+            fi
+        done
+        
+        CURRENT_CMDLINE=$(echo "$CURRENT_CMDLINE" | xargs)
+        sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$CURRENT_CMDLINE\"|" "$GRUB_FILE" || true
+        
+        log "Nové parametry jádra: $CURRENT_CMDLINE"
+    else
+        log "Žádný specifický hardware (Bay Trail/AMD) nedetekován, parametry jádra zůstávají beze změny."
     fi
 }
 
