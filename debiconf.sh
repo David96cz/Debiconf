@@ -261,7 +261,7 @@ install_packages() {
             ;;
     esac
 
-    # -- NOVÝ BLOK PRO NEJNOVĚJŠÍ WINE (WINEHQ) A WINETRICKS --
+# -- NOVÝ BLOK PRO NEJNOVĚJŠÍ WINE (WINEHQ) A WINETRICKS --
     if [ "$WINE_REQ" == "TRUE" ]; then
         log "Zpracovávám požadavek na instalaci Wine..."
         if [ "$SYS_ARCH" == "arm64" ]; then
@@ -280,12 +280,17 @@ install_packages() {
             
             apt-get update -qq || true
             
+            # PŘIDÁNO: fonts-wine (aby fungovalo vykreslování písma v exe)
             log "Instaluji nejnovější verzi WineHQ Stable..."
-            apt-get install -y --install-recommends winehq-stable || true
+            apt-get install -y --install-recommends winehq-stable fonts-wine || true
             
             log "Stahuji absolutně nejnovější Winetricks přímo z GitHubu..."
             wget -qO /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks || true
             chmod +x /usr/local/bin/winetricks || true
+
+            # PŘIDÁNO: Tichá inicializace Wine profilu na pozadí bez vyskakovacích oken
+            log "Inicializuji Wine profil potichu, aby neotravoval uživatele..."
+            su - "$REAL_USER" -c "WINEDLLOVERRIDES=mscoree,mshtml= wineboot -u" || true
         fi
     fi
     # ---------------------------------------------------------
@@ -340,12 +345,13 @@ setup_auto_updates() {
 # === 3. KONFIGURACE DESKTOPOVÝCH PROSTŘEDÍ ===
 
 configure_lxqt() {
+
     log "Aplikuji specifické nastavení pro LXQt..."
     
-    [ -f "$CONTENTS_DIR/lxqt/config/Shortcuts.conf" ] && mv "$CONTENTS_DIR/lxqt/config/Shortcuts.conf" "$CONTENTS_DIR/lxqt/config/shortcuts.conf" 2>/dev/null || true
     [ -f "$CONTENTS_DIR/lxqt/config/shortcuts.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/shortcuts.conf" || true
     [ -f "$CONTENTS_DIR/lxqt/config/xfwm.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/xfwm.conf" || true
     [ -f "$CONTENTS_DIR/lxqt/config/contextmenu.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/contextmenu.conf" || true
+    [ -f "$CONTENTS_DIR/lxqt/config/lxqt-powermanagement.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/lxqt-powermanagement.conf" || true
 
     local SHORTCUTS_SRC="$CONTENTS_DIR/lxqt/config/shortcuts.conf"
     local XFWM_SRC="$CONTENTS_DIR/lxqt/config/xfwm.conf"
@@ -513,7 +519,7 @@ configure_lxqt() {
 
     local Q_CONF="$USER_HOME/.config/qterminal.org/qterminal.ini"
     mkdir -p "$(dirname "$Q_CONF")"
-    [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=false" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF" || true
+    [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=true" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF" || true
 
     local CONTEXT_CONF="$CONTENTS_DIR/lxqt/config/contextmenu.conf"
     local ACTION_DIR="$USER_HOME/.local/share/file-manager/actions"
@@ -532,24 +538,8 @@ configure_lxqt() {
         done < "$CONTEXT_CONF"
     fi
 
-    # --- VYTVOŘENÍ ZÁSTUPCE PRO NEW-SHORTCUT.SH V MENU ---
-    log "Vytvářím zástupce pro skript new-shortcut v menu aplikací..."
-    local SHORTCUT_DESKTOP="$LOCAL_APPS/new-shortcut.desktop"
-    
-    echo "[Desktop Entry]" > "$SHORTCUT_DESKTOP"
-    echo "Type=Application" >> "$SHORTCUT_DESKTOP"
-    echo "Name=Vytvořit zástupce" >> "$SHORTCUT_DESKTOP"
-    echo "Comment=Spustí skript pro nový zástupce" >> "$SHORTCUT_DESKTOP"
-    echo "Exec=$USER_HOME/.local/bin/new-shortcut.sh" >> "$SHORTCUT_DESKTOP"
-    echo "Icon=system-run" >> "$SHORTCUT_DESKTOP"
-    echo "Terminal=false" >> "$SHORTCUT_DESKTOP"
-    echo "Categories=Utility;" >> "$SHORTCUT_DESKTOP"
-    
-    chmod +x "$SHORTCUT_DESKTOP" || true
-    # -----------------------------------------------------
-
     # --- VÝCHOZÍ APLIKACE (MIME TYPES) ---
-    log "Nastavuji výchozí aplikace (FeatherPad, GDebi, Office)..."
+    log "Nastavuji výchozí aplikace (FeatherPad, GDebi, Office, Wine, VLC)..."
     local MIME_FILE="$USER_HOME/.config/mimeapps.list"
     
     # Vytvoření souboru a základní sekce, pokud neexistuje
@@ -570,6 +560,21 @@ configure_lxqt() {
     
     # DEB balíčky -> GDebi
     set_default_app "application/vnd.debian.binary-package" "gdebi.desktop"
+
+    # EXE soubory -> Wine (pouze pokud bylo zvoleno k instalaci)
+    if [ "$WINE_CHOICE" == "1" ]; then # Změň na svou proměnnou z dotazníku
+        set_default_app "application/x-ms-dos-executable" "wine.desktop"
+        set_default_app "application/x-msdownload" "wine.desktop"
+        set_default_app "application/x-ms-shortcut" "wine.desktop"
+    fi
+
+    # Videa -> VLC
+    set_default_app "video/mp4" "vlc.desktop"
+    set_default_app "video/x-matroska" "vlc.desktop"
+    set_default_app "video/x-msvideo" "vlc.desktop"
+    set_default_app "video/webm" "vlc.desktop"
+    set_default_app "video/quicktime" "vlc.desktop"
+    set_default_app "video/x-flv" "vlc.desktop"
 
     # DOCX -> Podle výběru v dotazníku
     if [ "$OFFICE_CHOICE" == "1" ]; then
