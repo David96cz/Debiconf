@@ -152,6 +152,20 @@ init_setup() {
             esac
         done
 
+        echo "--------------------------------------------------"
+        echo "6. Chceš nainstalovat Wine a Winetricks pro Windows aplikace?"
+        while true; do
+            echo "1) Ano"
+            echo "2) Ne"
+            read -p "Zadej číslo (1 nebo 2): " WINE_ANS
+            case "$WINE_ANS" in
+                1) WINE_REQ="TRUE"; WINE_STR="Ano"; break ;;
+                2) WINE_REQ="FALSE"; WINE_STR="Ne"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
         # SOUHRN A POTVRZENÍ
         clear
         echo -e "\033[1;36m==================================================\033[0m"
@@ -163,6 +177,7 @@ init_setup() {
         echo " Office:           $OFFICE_STR"
         echo " Autologin:        $AUTOLOGIN_STR"
         echo " Zámek Sudo:       $ROOT_STR"
+        echo " Wine podpora:     $WINE_STR"
         echo -e "\033[1;36m==================================================\033[0m"
         echo "Je toto nastavení správné?"
         while true; do
@@ -170,14 +185,14 @@ init_setup() {
             echo "2) Ne (Začít znovu)"
             read -p "Zadej číslo (1 nebo 2, případně R pro restart): " CONFIRM_ANS
             case "$CONFIRM_ANS" in
-                1) break 2 ;; # Ukončí vnitřní i vnější smyčku a jde se instalovat
-                2|r|R) continue 2 ;; # Restartuje hlavní smyčku a zahodí odpovědi
+                1) break 2 ;; 
+                2|r|R) continue 2 ;; 
                 *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
             esac
         done
     done
 
-    # Definice lokálního konfiguráku hned po výběru prostředí
+    # Definice lokálního konfiguráku
     LOCAL_CONFIG="$CONTENTS_DIR/$(echo "$DESKTOP_ENV" | tr '[:upper:]' '[:lower:]')/config.txt"
 
     # Načtení zbytku globálních nastavení
@@ -245,6 +260,35 @@ install_packages() {
             fi
             ;;
     esac
+
+    # -- NOVÝ BLOK PRO NEJNOVĚJŠÍ WINE (WINEHQ) A WINETRICKS --
+    if [ "$WINE_REQ" == "TRUE" ]; then
+        log "Zpracovávám požadavek na instalaci Wine..."
+        if [ "$SYS_ARCH" == "arm64" ]; then
+            log "UPOZORNĚNÍ: Architektura ARM64 nepodporuje nativní spouštění x86 Windows aplikací bez emulátoru. Instalaci Wine přeskakuji z důvodu kompatibility."
+        else
+            log "Povoluji 32bitovou architekturu (i386)..."
+            dpkg --add-architecture i386 || true
+            
+            log "Přidávám oficiální WineHQ repozitář (bezpečně pro tuto verzi Debianu)..."
+            mkdir -p /etc/apt/keyrings
+            wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key || true
+            
+            # Dynamické načtení kódového jména (např. trixie), aby nedošlo k přidání cizích repozitářů
+            source /etc/os-release
+            wget -NP /etc/apt/sources.list.d/ "https://dl.winehq.org/wine-builds/debian/dists/${VERSION_CODENAME}/winehq-${VERSION_CODENAME}.sources" || true
+            
+            apt-get update -qq || true
+            
+            log "Instaluji nejnovější verzi WineHQ Stable..."
+            apt-get install -y --install-recommends winehq-stable || true
+            
+            log "Stahuji absolutně nejnovější Winetricks přímo z GitHubu..."
+            wget -qO /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks || true
+            chmod +x /usr/local/bin/winetricks || true
+        fi
+    fi
+    # ---------------------------------------------------------
 
     if grep -iq "^INSTALL_RUSTDESK=TRUE" "$GLOBAL_CONFIG" || grep -iq "^INSTALL_RUSTDESK=TRUE" "$LOCAL_CONFIG"; then
         log "Instalace RustDesku povolena. Zjišťuji nejnovější verzi..."
