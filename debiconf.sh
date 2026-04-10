@@ -194,6 +194,22 @@ init_setup() {
             esac
         done
 
+        echo "--------------------------------------------------"
+        echo "7. Instalace RustDesk (Vzdálená plocha)?"
+        echo "   Umožňuje ovládat tento počítač z jiného zařízení nebo naopak."
+        echo "   Ideální pro rychlou technickou pomoc nebo správu na dálku."
+        while true; do
+            echo "1) Ano (Nainstalovat RustDesk)"
+            echo "2) Ne (Přeskočit)"
+            read -p "Zadej číslo (1 nebo 2): " RUSTDESK_ANS
+            case "$RUSTDESK_ANS" in
+                1) RUSTDESK_REQ="TRUE"; RUSTDESK_STR="Ano"; break ;;
+                2) RUSTDESK_REQ="FALSE"; RUSTDESK_STR="Ne"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
         # SOUHRN A POTVRZENÍ
         clear
         echo -e "\033[1;36m==================================================\033[0m"
@@ -206,6 +222,7 @@ init_setup() {
         echo " Autologin:        $AUTOLOGIN_STR"
         echo " Zámek Sudo:       $ROOT_STR"
         echo " Wine podpora:     $WINE_STR"
+        echo " RustDesk:         $RUSTDESK_STR"
         echo -e "\033[1;36m==================================================\033[0m"
         echo "Je toto nastavení správné?"
         while true; do
@@ -323,25 +340,28 @@ install_packages() {
     fi
     # ---------------------------------------------------------
 
-    if grep -iq "^INSTALL_RUSTDESK=TRUE" "$GLOBAL_CONFIG" || grep -iq "^INSTALL_RUSTDESK=TRUE" "$LOCAL_CONFIG"; then
-        log "Instalace RustDesku povolena. Zjišťuji nejnovější verzi..."
+    if [ "$RUSTDESK_REQ" == "TRUE" ]; then
+        log "Instalace RustDesku zahájena. Detekuji verzi pro $SYS_ARCH..."
         
-        # Filtr pro GitHub API dynamicky podle architektury (x86_64 vs aarch64)
+        # Výběr správné architektury (x86_64 vs aarch64)
         if [ "$SYS_ARCH" == "arm64" ]; then
             RUSTDESK_GREP="browser_download_url.*aarch64\.deb"
         else
             RUSTDESK_GREP="browser_download_url.*x86_64\.deb"
         fi
 
+        # Získání URL z GitHubu
         LATEST_URL=$(curl -sL https://api.github.com/repos/rustdesk/rustdesk/releases/latest | grep -E "$RUSTDESK_GREP" | cut -d '"' -f 4 | head -n 1)
         
         if [ -n "$LATEST_URL" ]; then
-            log "Stahuji RustDesk pro $SYS_ARCH z: $LATEST_URL"
+            log "Stahuji RustDesk: $LATEST_URL"
             wget -qO /tmp/rustdesk.deb "$LATEST_URL"
+            # apt-get install nainstaluje i chybějící závislosti
             apt-get install -y /tmp/rustdesk.deb || true
             rm -f /tmp/rustdesk.deb
+            log "RustDesk byl úspěšně nainstalován."
         else
-            log "CHYBA: Nepodařilo se získat odkaz na nejnovější RustDesk. Přeskakuji."
+            log "CHYBA: Nepodařilo se získat odkaz na RustDesk. Přeskakuji."
         fi
     fi
 }
@@ -556,7 +576,7 @@ configure_lxqt() {
 
     local Q_CONF="$USER_HOME/.config/qterminal.org/qterminal.ini"
     mkdir -p "$(dirname "$Q_CONF")"
-    [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=true" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF" || true
+    [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=false" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF" || true
 
     local CONTEXT_CONF="$CONTENTS_DIR/lxqt/config/contextmenu.conf"
     local ACTION_DIR="$USER_HOME/.local/share/file-manager/actions"
@@ -585,7 +605,7 @@ configure_lxqt() {
     echo "Comment=Spustí skript pro nový zástupce" >> "$SHORTCUT_DESKTOP"
     echo "Exec=$USER_HOME/.local/bin/new-shortcut.sh" >> "$SHORTCUT_DESKTOP"
     echo "Icon=system-run" >> "$SHORTCUT_DESKTOP"
-    echo "Terminal=false" >> "$SHORTCUT_DESKTOP"
+    echo "Terminal=true" >> "$SHORTCUT_DESKTOP"
     echo "Categories=Utility;" >> "$SHORTCUT_DESKTOP"
     
     chmod +x "$SHORTCUT_DESKTOP" || true
