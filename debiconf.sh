@@ -665,6 +665,8 @@ main() {
     setup_boot
     admin_security
 
+    rm -rf debiconf
+
     echo "=================================================="
     echo " HOTOVO"
     echo " RESTART ZA 5 SEKUND."
