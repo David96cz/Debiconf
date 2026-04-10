@@ -538,6 +538,22 @@ configure_lxqt() {
         done < "$CONTEXT_CONF"
     fi
 
+    # --- VYTVOŘENÍ ZÁSTUPCE PRO NEW-SHORTCUT.SH V MENU ---
+    log "Vytvářím zástupce pro skript new-shortcut v menu aplikací..."
+    local SHORTCUT_DESKTOP="$LOCAL_APPS/new-shortcut.desktop"
+    
+    echo "[Desktop Entry]" > "$SHORTCUT_DESKTOP"
+    echo "Type=Application" >> "$SHORTCUT_DESKTOP"
+    echo "Name=Vytvořit zástupce" >> "$SHORTCUT_DESKTOP"
+    echo "Comment=Spustí skript pro nový zástupce" >> "$SHORTCUT_DESKTOP"
+    echo "Exec=$USER_HOME/.local/bin/new-shortcut.sh" >> "$SHORTCUT_DESKTOP"
+    echo "Icon=system-run" >> "$SHORTCUT_DESKTOP"
+    echo "Terminal=false" >> "$SHORTCUT_DESKTOP"
+    echo "Categories=Utility;" >> "$SHORTCUT_DESKTOP"
+    
+    chmod +x "$SHORTCUT_DESKTOP" || true
+    # -----------------------------------------------------
+
     # --- VÝCHOZÍ APLIKACE (MIME TYPES) ---
     log "Nastavuji výchozí aplikace (FeatherPad, GDebi, Office, Wine, VLC)..."
     local MIME_FILE="$USER_HOME/.config/mimeapps.list"
