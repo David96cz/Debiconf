@@ -357,17 +357,23 @@ install_packages() {
             log "Stahuji RustDesk: $LATEST_URL"
             wget -qO /tmp/rustdesk.deb "$LATEST_URL"
             
-            # TRIK 1: Instalace naslepo (odpojení grafických proměnných)
-            # Tímto RustDesku odepřeme přístup k X11/Waylandu, takže GUI rovnou selže při startu
+            # Instalace (využijeme ten trik s odpojením grafiky, aby na nás rovnou nevybaflo okno)
             env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY apt-get install -y /tmp/rustdesk.deb || true
             rm -f /tmp/rustdesk.deb
             
-            log "Čistím procesy po instalaci RustDesku..."
-            # TRIK 2: Počkáme, až se instalační skripty zklidní, a pak to vyhladíme
+            log "Zabíjím skryté autostart pasti po RustDesku..."
+            
+            # 1. Počkáme chvíli, než to RustDesk vůbec vytvoří
             sleep 3
+            
+            # 2. Nemilosrdně sestřelíme všechny procesy
             killall -9 rustdesk 2>/dev/null || true
             
-            # Čistě nahodíme zpět pouze démona na pozadí
+            # 3. HLAVNÍ RÁNA JISTOTY: Smažeme to kukaččí vejce přímo z tvojí složky!
+            rm -f "$USER_HOME/.config/autostart/rustdesk.desktop" 2>/dev/null || true
+            rm -f "/root/.config/autostart/rustdesk.desktop" 2>/dev/null || true
+            
+            # Čistý restart služby na pozadí
             systemctl restart rustdesk 2>/dev/null || true
             
             log "RustDesk byl úspěšně nainstalován a utajen."
