@@ -629,19 +629,27 @@ configure_lxqt() {
 
     # --- NASAZENÍ ZÁSTUPCE Z ACTIONS.CONF ---
     log "Nasazuji zástupce pro skript z actions.conf..."
+    
+    # 1. Vynucení přesné standardizované cesty pro uživatelské menu
+    local LOCAL_APPS_DIR="$USER_HOME/.local/share/applications"
+    mkdir -p "$LOCAL_APPS_DIR"
+    chown "$REAL_USER:$REAL_USER" "$LOCAL_APPS_DIR" 2>/dev/null || true
+    
     local SRC_ACTIONS="$CONTENTS_DIR/lxqt/actions.conf" 
-    local DEST_DESKTOP="$LOCAL_APPS/new-shortcut.desktop"
+    local DEST_DESKTOP="$LOCAL_APPS_DIR/new-shortcut.desktop"
 
     if [ -f "$SRC_ACTIONS" ]; then
         # Zkopírujeme soubor na místo
         cp "$SRC_ACTIONS" "$DEST_DESKTOP"
         
-        # Nahradíme vlnovku absolutní cestou (desktop entry vlnovku v Exec neumí)
-        # Používáme | jako oddělovač, aby se to netlouklo s lomítky v cestě
+        # Nahradíme vlnovku absolutní cestou
         sed -i "s|~/.local|$USER_HOME/.local|g" "$DEST_DESKTOP"
         
+        # 2. Nastavení spustitelnosti a HLAVNĚ vlastnictví
         chmod +x "$DEST_DESKTOP"
-        log "Zástupce 'Vytvořit zástupce' byl úspěšně vytvořen a upraven."
+        chown "$REAL_USER:$REAL_USER" "$DEST_DESKTOP"
+        
+        log "Zástupce 'Vytvořit zástupce' byl úspěšně vytvořen."
     else
         log "CHYBA: Zdrojový soubor $SRC_ACTIONS nebyl nalezen!"
     fi
