@@ -667,7 +667,13 @@ lxqt_setup_apps_and_defaults() {
         sed -i "/^\[Default Applications\]/a ${mime}=${app};" "$MIME_FILE"
     }
 
-    set_default_app "text/plain" "featherpad.desktop"
+    set_default_app "text/plain" "featherpad.desktop"  
+    set_default_app "text/markdown" "featherpad.desktop"
+    set_default_app "text/csv" "featherpad.desktop"
+    set_default_app "application/json" "featherpad.desktop"
+    set_default_app "application/xml" "featherpad.desktop"
+    set_default_app "application/x-shellscript" "featherpad.desktop"
+    
     set_default_app "application/vnd.debian.binary-package" "gdebi.desktop"
     if [ "$WINE_CHOICE" == "1" ]; then
         set_default_app "application/x-ms-dos-executable" "wine.desktop"
