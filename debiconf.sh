@@ -356,11 +356,21 @@ install_packages() {
         if [ -n "$LATEST_URL" ]; then
             log "Stahuji RustDesk: $LATEST_URL"
             wget -qO /tmp/rustdesk.deb "$LATEST_URL"
-            # apt-get install nainstaluje i chybějící závislosti
-            apt-get install -y /tmp/rustdesk.deb || true
+            
+            # TRIK 1: Instalace naslepo (odpojení grafických proměnných)
+            # Tímto RustDesku odepřeme přístup k X11/Waylandu, takže GUI rovnou selže při startu
+            env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY apt-get install -y /tmp/rustdesk.deb || true
             rm -f /tmp/rustdesk.deb
-            pkill -f "rustdesk" 2>/dev/null || true
-            log "RustDesk byl úspěšně nainstalován."
+            
+            log "Čistím procesy po instalaci RustDesku..."
+            # TRIK 2: Počkáme, až se instalační skripty zklidní, a pak to vyhladíme
+            sleep 3
+            killall -9 rustdesk 2>/dev/null || true
+            
+            # Čistě nahodíme zpět pouze démona na pozadí
+            systemctl restart rustdesk 2>/dev/null || true
+            
+            log "RustDesk byl úspěšně nainstalován a utajen."
         else
             log "CHYBA: Nepodařilo se získat odkaz na RustDesk. Přeskakuji."
         fi
@@ -906,10 +916,17 @@ main() {
     rm -rf debiconf
 
     echo "=================================================="
-    echo " HOTOVO"
-    echo " RESTART ZA 5 SEKUND."
+    echo "HOTOVO"
+    echo "RESTART ZA 5 SEKUND..."
     echo "=================================================="
-    sleep 5
+
+    for i in {5..1}
+    do
+        echo "$i..."
+        sleep 1
+    done
+
+    echo "Restartuji nyní!"
     reboot
 }
 
