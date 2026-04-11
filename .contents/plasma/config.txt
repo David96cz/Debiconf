@@ -2,8 +2,5 @@
 plasma-desktop sddm xorg konsole dolphin kio-extras network-manager plasma-nm systemsettings kscreen powerdevil upower plasma-pa bluedevil bluetooth bluez kinfocenter pipewire-audio wireplumber pipewire-pulse plasma-discover kde-spectacle wl-clipboard breeze-gtk-theme kde-config-gtk-style polkit-kde-agent-1 sddm-theme-breeze
 
 [EXTRA_PACKAGES]
-# Balíčky specifické jen pro Plasmu (když je prázdno, nic se neděje)
-
 
 [APPS_TO_HIDE]
-# Aplikace, které chceš v menu Plasmy skrýt (např. balast)
