@@ -3,28 +3,32 @@
 # DEBICONF - ČISTÝ DEBIAN S DESKTOPOVÝM PROSTŘEDÍM (PROFI REFACTOR - FIXED)
 # ==============================================================================
 
-set -e # Ukončí skript při první vážné chybě
+# === INIT FUNKCE ===
 
-# === GLOBÁLNÍ PROMĚNNÉ A CESTY ===
-BASE_DIR="$(dirname "$(realpath "$0")")"
-CONTENTS_DIR="$BASE_DIR/.contents"
-GLOBAL_CONFIG="$CONTENTS_DIR/setup-config.txt"
+init_script() {
+    set -e # Ukončí skript při první vážné chybě
 
-# Bezpečnější detekce původního uživatele (hledá UID 1000+)
-REAL_USER=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 {print $1}' | head -n 1)
-if [ -z "$REAL_USER" ]; then
-    echo -e "\033[1;31mCHYBA: Nepodařilo se najít žádného běžného uživatele (UID 1000+).\033[0m" >&2
-    exit 1
-fi
-# Přesná detekce home složky podle databáze uživatelů
-USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+    # === GLOBÁLNÍ PROMĚNNÉ A CESTY ===
+    BASE_DIR="$(dirname "$(realpath "$0")")"
+    CONTENTS_DIR="$BASE_DIR/.contents"
+    GLOBAL_CONFIG="$CONTENTS_DIR/setup-config.txt"
 
-# Detekce jazyka
-SYS_LOCALE=$(grep "^LANG=" /etc/default/locale | cut -d'=' -f2 | tr -d '"' || echo "en_US.UTF-8")
-SYS_LANG_CODE="${SYS_LOCALE%%.*}"
+    # Bezpečnější detekce původního uživatele (hledá UID 1000+)
+    REAL_USER=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 {print $1}' | head -n 1)
+    if [ -z "$REAL_USER" ]; then
+        echo -e "\033[1;31mCHYBA: Nepodařilo se najít žádného běžného uživatele (UID 1000+).\033[0m" >&2
+        exit 1
+    fi
+    # Přesná detekce home složky podle databáze uživatelů
+    USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 
-# Přidána detekce architektury (amd64 nebo arm64)
-SYS_ARCH=$(dpkg --print-architecture)
+    # Detekce jazyka
+    SYS_LOCALE=$(grep "^LANG=" /etc/default/locale | cut -d'=' -f2 | tr -d '"' || echo "en_US.UTF-8")
+    SYS_LANG_CODE="${SYS_LOCALE%%.*}"
+
+    # Přidána detekce architektury (amd64 nebo arm64)
+    SYS_ARCH=$(dpkg --print-architecture)
+}
 
 # === POMOCNÉ FUNKCE ===
 
@@ -306,7 +310,7 @@ install_packages() {
             ;;
     esac
 
-# -- NOVÝ BLOK PRO NEJNOVĚJŠÍ WINE (WINEHQ) A WINETRICKS --
+    # -- NOVÝ BLOK PRO NEJNOVĚJŠÍ WINE (WINEHQ) A WINETRICKS --
     if [ "$WINE_REQ" == "TRUE" ]; then
         log "Zpracovávám požadavek na instalaci Wine..."
         if [ "$SYS_ARCH" == "arm64" ]; then
@@ -424,20 +428,46 @@ setup_auto_updates() {
 
 # === 3. KONFIGURACE DESKTOPOVÝCH PROSTŘEDÍ ===
 
-configure_lxqt() {
+# ==============================================================================
+# KONFIGURACE LXQT + PODFUNKCE PRO KONFIGURACI
+# ==============================================================================
 
-    log "Aplikuji specifické nastavení pro LXQt..."
+lxqt_prepare_base_configs() {
+    log "1/7: Připravuji základní konfigurační soubory LXQt..."
     
+    # Odstranění Windows konců řádků
     [ -f "$CONTENTS_DIR/lxqt/config/shortcuts.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/shortcuts.conf" || true
     [ -f "$CONTENTS_DIR/lxqt/config/xfwm.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/xfwm.conf" || true
     [ -f "$CONTENTS_DIR/lxqt/config/contextmenu.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/contextmenu.conf" || true
     [ -f "$CONTENTS_DIR/lxqt/config/lxqt-powermanagement.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/lxqt-powermanagement.conf" || true
 
-    local SHORTCUTS_SRC="$CONTENTS_DIR/lxqt/config/shortcuts.conf"
-    local XFWM_SRC="$CONTENTS_DIR/lxqt/config/xfwm.conf"
-    local APPS_TO_HIDE_STR=$(get_section "$LOCAL_CONFIG" "APPS_TO_HIDE")
-    read -r -a APPS_TO_HIDE <<< "$APPS_TO_HIDE_STR"
+    # Kopírování základu
+    local CONF_SRC="$CONTENTS_DIR/lxqt/config"
+    mkdir -p "$USER_HOME/.config/lxqt" "$USER_HOME/.config/pcmanfm-qt/lxqt"
+    cp "$CONF_SRC/"*.conf "$USER_HOME/.config/lxqt/" 2>/dev/null || true
+    cp "$CONF_SRC/pcmanfm-qt.conf" "$USER_HOME/.config/pcmanfm-qt/lxqt/settings.conf" 2>/dev/null || true
 
+    # Základní nastavení LXQt
+    local LXQT_CONF="$USER_HOME/.config/lxqt/lxqt.conf"
+    if [ -f "$LXQT_CONF" ]; then
+        sed -i "s/^ask_before_logout=.*/ask_before_logout=$CONF_OUT/" "$LXQT_CONF" || true
+        sed -i "s/^theme=.*/theme=Lubuntu Arc/" "$LXQT_CONF" || true
+        if grep -q "^language=" "$LXQT_CONF"; then
+            sed -i "s/^language=.*/language=$SYS_LANG_CODE/" "$LXQT_CONF" || true
+        else
+            sed -i "/^\[General\]/a language=$SYS_LANG_CODE" "$LXQT_CONF" || true
+        fi
+    fi
+
+    # QTerminal nenápadně stranou
+    local Q_CONF="$USER_HOME/.config/qterminal.org/qterminal.ini"
+    mkdir -p "$(dirname "$Q_CONF")"
+    [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=false" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF" || true
+}
+
+lxqt_install_theme_and_icons() {
+    log "2/7: Stahuji a aplikuji Lubuntu artwork a ikony..."
+    
     cd /tmp && rm -rf lubuntu-rip && mkdir -p lubuntu-rip && cd lubuntu-rip
     FILE_NAME=$(wget -qO- http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/ | grep -o 'lubuntu-artwork_[^"]*_all\.deb' | tail -n 1) || true
     if [ -n "$FILE_NAME" ]; then
@@ -448,27 +478,15 @@ configure_lxqt() {
     fi
     cd ~ && rm -rf /tmp/lubuntu-rip || true
 
-    local CONF_SRC="$CONTENTS_DIR/lxqt/config"
-    mkdir -p "$USER_HOME/.config/lxqt" "$USER_HOME/.config/pcmanfm-qt/lxqt"
-    cp "$CONF_SRC/"*.conf "$USER_HOME/.config/lxqt/" 2>/dev/null || true
-    cp "$CONF_SRC/pcmanfm-qt.conf" "$USER_HOME/.config/pcmanfm-qt/lxqt/settings.conf" 2>/dev/null || true
-
-    if [ "$SYS_ARCH" = "amd64" ] && [ -f "$CONF_SRC/lxqt-panel_no_about_amd64" ]; then
-        log "Nalezena architektura amd64. Instaluji příslušný panel..."
-        mv /usr/bin/lxqt-panel /usr/bin/lxqt-panel.bak 2>/dev/null || true
-        cp "$CONF_SRC/lxqt-panel_no_about_amd64" /usr/bin/lxqt-panel || true
-        chmod +x /usr/bin/lxqt-panel || true
-
-    elif [ "$SYS_ARCH" = "arm64" ] && [ -f "$CONF_SRC/lxqt-panel_no_about_arm64" ]; then
-        log "Nalezena architektura arm64. Instaluji příslušný panel..."
-        mv /usr/bin/lxqt-panel /usr/bin/lxqt-panel.bak 2>/dev/null || true
-        cp "$CONF_SRC/lxqt-panel_no_about_arm64" /usr/bin/lxqt-panel || true
-        chmod +x /usr/bin/lxqt-panel || true
-
-    else
-        log "Upravený panel pro architekturu $SYS_ARCH nebyl ve zdrojích nalezen, ponechávám výchozí."
+    local ICONS_SRC="$CONTENTS_DIR/lxqt/icons"
+    if [ -d "$ICONS_SRC" ]; then
+        cp -r "$ICONS_SRC" "$USER_HOME/.local/share/" 2>/dev/null || true
     fi
+}
 
+lxqt_setup_system_integrations() {
+    log "3/7: Nasazuji systémové integrace (Skripty, APT hook, Locale, Polkit)..."
+    
     local SCRIPTS_SRC="$CONTENTS_DIR/lxqt/scripts"
     mkdir -p "$USER_HOME/.local/bin"
     if [ -d "$SCRIPTS_SRC" ]; then
@@ -476,11 +494,8 @@ configure_lxqt() {
         chmod +x "$USER_HOME/.local/bin/"* 2>/dev/null || true
     fi
 
-    # --- AUTOMATIZACE WRAPPERŮ PO KAŽDÉ INSTALACI ---
-    log "Vytvářím APT hook pro automatické spouštění update-wrappers..."
     echo "DPkg::Post-Invoke { \"su - $REAL_USER -c '$USER_HOME/.local/bin/update-wrappers.sh'\"; };" > /etc/apt/apt.conf.d/99-update-wrappers
-    # ------------------------------------------------
-
+    
     chmod +s $(which brightnessctl 2>/dev/null) 2>/dev/null || true
     rm -f "/tmp/jas_notif_id" || true
     if ! grep -q ".local/bin" "$USER_HOME/.bashrc"; then
@@ -498,7 +513,12 @@ configure_lxqt() {
     if [ -f "$TOUCHPAD_SRC" ]; then
         cp "$TOUCHPAD_SRC" /etc/X11/xorg.conf.d/40-libinput-touchpad.conf || true
     fi
+}
 
+lxqt_setup_wm_and_panel() {
+    log "4/7: Konfiguruji správce oken (XFWM4) a LXQt panel..."
+    
+    # XFWM4 Session
     local SESSION_CONF="$USER_HOME/.config/lxqt/session.conf"
     if [ ! -f "$SESSION_CONF" ]; then
         echo -e "[General]\nwindow_manager=xfwm4" > "$SESSION_CONF"
@@ -507,97 +527,44 @@ configure_lxqt() {
         grep -q "^window_manager=" "$SESSION_CONF" || sed -i '/^\[General\]/a window_manager=xfwm4' "$SESSION_CONF" || true
     fi
 
+    local XFWM_SRC="$CONTENTS_DIR/lxqt/config/xfwm.conf"
     if [ -f "$XFWM_SRC" ]; then
-        log "Aplikuji externí konfiguraci XFWM4..."
-        sed -i 's/\r$//' "$XFWM_SRC"
-        
         cp "$XFWM_SRC" /tmp/xfwm-apply.sh
         chown "$REAL_USER:$REAL_USER" /tmp/xfwm-apply.sh
-        
-        # Vytvoření složky A OKAMŽITÉ PŘEDÁNÍ PRÁV, aby xfconfd mohl zapisovat!
         mkdir -p "$USER_HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
         chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config/xfce4"
-        
-        # D-bus session s pojistkou (sleep), aby démon neumřel před zápisem
         su - "$REAL_USER" -c "dbus-run-session bash -c 'bash /tmp/xfwm-apply.sh; sleep 2'" || true
         rm -f /tmp/xfwm-apply.sh
     fi
 
-    local LXQT_CONF="$USER_HOME/.config/lxqt/lxqt.conf"
-    if [ -f "$LXQT_CONF" ]; then
-        sed -i "s/^ask_before_logout=.*/ask_before_logout=$CONF_OUT/" "$LXQT_CONF" || true
-        sed -i "s/^theme=.*/theme=Lubuntu Arc/" "$LXQT_CONF" || true
-        if grep -q "^language=" "$LXQT_CONF"; then
-            sed -i "s/^language=.*/language=$SYS_LANG_CODE/" "$LXQT_CONF" || true
-        else
-            sed -i "/^\[General\]/a language=$SYS_LANG_CODE" "$LXQT_CONF" || true
-        fi
+    # Architektura panelu
+    local CONF_SRC="$CONTENTS_DIR/lxqt/config"
+    if [ "$SYS_ARCH" = "amd64" ] && [ -f "$CONF_SRC/lxqt-panel_no_about_amd64" ]; then
+        mv /usr/bin/lxqt-panel /usr/bin/lxqt-panel.bak 2>/dev/null || true
+        cp "$CONF_SRC/lxqt-panel_no_about_amd64" /usr/bin/lxqt-panel || true
+        chmod +x /usr/bin/lxqt-panel || true
+    elif [ "$SYS_ARCH" = "arm64" ] && [ -f "$CONF_SRC/lxqt-panel_no_about_arm64" ]; then
+        mv /usr/bin/lxqt-panel /usr/bin/lxqt-panel.bak 2>/dev/null || true
+        cp "$CONF_SRC/lxqt-panel_no_about_arm64" /usr/bin/lxqt-panel || true
+        chmod +x /usr/bin/lxqt-panel || true
     fi
 
-    local SHORTCUTS_CONF="$USER_HOME/.config/lxqt/globalkeyshortcuts.conf"
-    if [ -f "$SHORTCUTS_SRC" ]; then
-        sed -i '/\.99\]/,+3d' "$SHORTCUTS_CONF" 2>/dev/null || true
-        while IFS='|' read -r label shortcut cmd || [[ -n "$label" ]]; do
-            [[ "$label" =~ ^#.*$ || -z "$label" ]] && continue
-            safe_shortcut="${shortcut//+/%2B}"
-            FINAL_CMD=$(echo "$cmd" | sed "s|brightness.sh|$USER_HOME/.local/bin/brightness.sh|g")
-            echo -e "\n[${safe_shortcut}.99]\nComment=$label\nEnabled=true\nExec=$FINAL_CMD" >> "$SHORTCUTS_CONF"
-        done < "$SHORTCUTS_SRC"
-    fi
-
-    # --- OPRAVA WINDOWS KLÁVESY (SUPER_L) PRO MENU ---
-    log "Přemapovávám Windows klávesu na otevření hlavního menu..."
-    if [ -f "$SHORTCUTS_CONF" ]; then
-        # Odstřelíme případný starý záznam pro Super_L (smaže hlavičku a 3 řádky pod ní)
-        sed -i '/^\[Super_L\]/,+3d' "$SHORTCUTS_CONF" 2>/dev/null || true
-        
-        # Zapíšeme to tam natvrdo znova a správně
-        echo -e "\n[Super_L]" >> "$SHORTCUTS_CONF"
-        echo "Comment=Otevrit menu" >> "$SHORTCUTS_CONF"
-        echo "Enabled=true" >> "$SHORTCUTS_CONF"
-        echo "path=/panel/fancymenu/show_hide" >> "$SHORTCUTS_CONF"
-    fi
-    # -------------------------------------------------
-
-    local WRAPPER_BIN="$USER_HOME/.local/bin/busy-launch.py"
-    local LOCAL_APPS="$USER_HOME/.local/share/applications"
-    mkdir -p "$LOCAL_APPS"
-    
-    for app in /usr/share/applications/*.desktop; do
-        [ -e "$app" ] || continue
-        app_name=$(basename "$app")
-        cp "$app" "$LOCAL_APPS/" || true
-        sed -i "s|^Exec=|Exec=python3 $WRAPPER_BIN |" "$LOCAL_APPS/$app_name" || true
-    done
-
-    for app in "${APPS_TO_HIDE[@]}"; do
-        [ -f "$LOCAL_APPS/$app" ] && sed -i '/^NoDisplay=/d; $ a NoDisplay=true' "$LOCAL_APPS/$app" || true
-    done
-
+    # Panel ikony a quicklaunch
     local PANEL_CONF="$USER_HOME/.config/lxqt/panel.conf"
+    local LOCAL_APPS="$USER_HOME/.local/share/applications"
     if [ -f "$PANEL_CONF" ]; then
         sed -i "s|icon=~/.local|icon=$USER_HOME/.local|g" "$PANEL_CONF" || true
-    fi
+        
+        case $BROWSER_CHOICE in
+            1) B_NAME="google-chrome.desktop"; B_EXEC="google-chrome-stable" ;;
+            2) B_NAME="chromium.desktop"; B_EXEC="chromium" ;;
+            3) B_NAME="brave-browser.desktop"; B_EXEC="brave-browser" ;;
+            4) B_NAME="firefox-esr.desktop"; B_EXEC="firefox-esr" ;;
+            *) B_NAME=""; B_EXEC="" ;;
+        esac
 
-    local ICONS_SRC="$CONTENTS_DIR/lxqt/icons"
-    if [ -d "$ICONS_SRC" ]; then
-        log "Kopíruji vlastní ikony pro LXQt..."
-        cp -r "$ICONS_SRC" "$USER_HOME/.local/share/" 2>/dev/null || true
-    fi
-    
-    case $BROWSER_CHOICE in
-        1) B_NAME="google-chrome.desktop"; B_EXEC="google-chrome-stable" ;;
-        2) B_NAME="chromium.desktop"; B_EXEC="chromium" ;;
-        3) B_NAME="brave-browser.desktop"; B_EXEC="brave-browser" ;;
-        4) B_NAME="firefox-esr.desktop"; B_EXEC="firefox-esr" ;;
-        *) B_NAME=""; B_EXEC="" ;;
-    esac
+        [ -f "$SESSION_CONF" ] && [ -n "$B_EXEC" ] && sed -i "s/^BROWSER=.*/BROWSER=$B_EXEC/" "$SESSION_CONF" || true
 
-    if [ -f "$SESSION_CONF" ] && [ -n "$B_EXEC" ]; then
-        sed -i "s/^BROWSER=.*/BROWSER=$B_EXEC/" "$SESSION_CONF" || true
-    fi
-
-    if [ -f "$PANEL_CONF" ]; then
         sed -i '/^apps\\/d' "$PANEL_CONF" || true
         if [ -n "$B_NAME" ]; then
             sed -i "/^\[quicklaunch\]/a apps\\\\1\\\\desktop=$LOCAL_APPS/pcmanfm-qt.desktop\napps\\\\2\\\\desktop=$LOCAL_APPS/$B_NAME\napps\\\\size=2" "$PANEL_CONF" || true
@@ -605,14 +572,31 @@ configure_lxqt() {
             sed -i "/^\[quicklaunch\]/a apps\\\\1\\\\desktop=$LOCAL_APPS/pcmanfm-qt.desktop\napps\\\\size=1" "$PANEL_CONF" || true
         fi
     fi
+}
 
-    local Q_CONF="$USER_HOME/.config/qterminal.org/qterminal.ini"
-    mkdir -p "$(dirname "$Q_CONF")"
-    [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=false" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF" || true
+lxqt_setup_shortcuts_and_menus() {
+    log "5/7: Kompiluji klávesové zkratky a vlastní kontextová menu..."
+    
+    local SHORTCUTS_SRC="$CONTENTS_DIR/lxqt/config/shortcuts.conf"
+    local SHORTCUTS_CONF="$USER_HOME/.config/lxqt/globalkeyshortcuts.conf"
+    
+    if [ -f "$SHORTCUTS_SRC" ] && [ -f "$SHORTCUTS_CONF" ]; then
+        sed -i '/\.99\]/,+3d' "$SHORTCUTS_CONF" 2>/dev/null || true
+        while IFS='|' read -r label shortcut cmd || [[ -n "$label" ]]; do
+            [[ "$label" =~ ^#.*$ || -z "$label" ]] && continue
+            safe_shortcut="${shortcut//+/%2B}"
+            FINAL_CMD=$(echo "$cmd" | sed "s|brightness.sh|$USER_HOME/.local/bin/brightness.sh|g")
+            echo -e "\n[${safe_shortcut}.99]\nComment=$label\nEnabled=true\nExec=$FINAL_CMD" >> "$SHORTCUTS_CONF"
+        done < "$SHORTCUTS_SRC"
 
+        # Super_L oprava
+        sed -i '/^\[Super_L\]/,+3d' "$SHORTCUTS_CONF" 2>/dev/null || true
+        echo -e "\n[Super_L]\nComment=Otevrit menu\nEnabled=true\npath=/panel/fancymenu/show_hide" >> "$SHORTCUTS_CONF"
+    fi
+
+    # Kontextové menu
     local CONTEXT_CONF="$CONTENTS_DIR/lxqt/config/contextmenu.conf"
     local ACTION_DIR="$USER_HOME/.local/share/file-manager/actions"
-
     if [ -s "$CONTEXT_CONF" ]; then
         mkdir -p "$ACTION_DIR"
         CURRENT_FILE=""
@@ -627,65 +611,69 @@ configure_lxqt() {
         done < "$CONTEXT_CONF"
     fi
 
-    # --- NASAZENÍ ZÁSTUPCE Z ACTIONS.CONF ---
-    log "Nasazuji zástupce pro skript z actions.conf..."
-    
-    # 1. Vynucení přesné standardizované cesty pro uživatelské menu
+    # Zástupci z actions.conf
     local LOCAL_APPS_DIR="$USER_HOME/.local/share/applications"
     mkdir -p "$LOCAL_APPS_DIR"
-    chown "$REAL_USER:$REAL_USER" "$LOCAL_APPS_DIR" 2>/dev/null || true
-    
-    local SRC_ACTIONS="$CONTENTS_DIR/lxqt/actions.conf" 
-    local DEST_DESKTOP="$LOCAL_APPS_DIR/new-shortcut.desktop"
-
+    local SRC_ACTIONS="$CONTENTS_DIR/lxqt/config/actions.conf"
     if [ -f "$SRC_ACTIONS" ]; then
-        # Zkopírujeme soubor na místo
-        cp "$SRC_ACTIONS" "$DEST_DESKTOP"
-        
-        # Nahradíme vlnovku absolutní cestou
-        sed -i "s|~/.local|$USER_HOME/.local|g" "$DEST_DESKTOP"
-        
-        # 2. Nastavení spustitelnosti a HLAVNĚ vlastnictví
-        chmod +x "$DEST_DESKTOP"
-        chown "$REAL_USER:$REAL_USER" "$DEST_DESKTOP"
-        
-        log "Zástupce 'Vytvořit zástupce' byl úspěšně vytvořen."
-    else
-        log "CHYBA: Zdrojový soubor $SRC_ACTIONS nebyl nalezen!"
+        local COUNT=0
+        local CURRENT_FILE=""
+        while IFS= read -r line || [ -n "$line" ]; do
+            trimmed=$(echo "$line" | xargs)
+            if [ "$trimmed" = "[Desktop Entry]" ]; then
+                COUNT=$((COUNT + 1))
+                CURRENT_FILE="$LOCAL_APPS_DIR/custom_shortcut_${COUNT}.desktop"
+                echo "[Desktop Entry]" > "$CURRENT_FILE"
+                chmod +x "$CURRENT_FILE"
+            elif [ -n "$CURRENT_FILE" ] && [ -n "$trimmed" ]; then
+                processed_line="${line//~\/.local/$USER_HOME\/.local}"
+                echo "$processed_line" >> "$CURRENT_FILE"
+            fi
+        done < "$SRC_ACTIONS"
     fi
-    # ----------------------------------------
+}
 
-    # --- VÝCHOZÍ APLIKACE (MIME TYPES) ---
-    log "Nastavuji výchozí aplikace (FeatherPad, GDebi, Office, Wine, VLC)..."
-    local MIME_FILE="$USER_HOME/.config/mimeapps.list"
+lxqt_setup_apps_and_defaults() {
+    log "6/7: Nastavuji chování aplikací, MIME typy a Autostart..."
     
-    # Vytvoření souboru a základní sekce, pokud neexistuje
+    local LOCAL_APPS="$USER_HOME/.local/share/applications"
+    local WRAPPER_BIN="$USER_HOME/.local/bin/busy-launch.py"
+    mkdir -p "$LOCAL_APPS"
+    
+    # Nasazení wrapperů
+    for app in /usr/share/applications/*.desktop; do
+        [ -e "$app" ] || continue
+        app_name=$(basename "$app")
+        cp "$app" "$LOCAL_APPS/" || true
+        sed -i "s|^Exec=|Exec=python3 $WRAPPER_BIN |" "$LOCAL_APPS/$app_name" || true
+    done
+
+    # Skrytí aplikací
+    local APPS_TO_HIDE_STR=$(get_section "$LOCAL_CONFIG" "APPS_TO_HIDE")
+    read -r -a APPS_TO_HIDE <<< "$APPS_TO_HIDE_STR"
+    for app in "${APPS_TO_HIDE[@]}"; do
+        [ -f "$LOCAL_APPS/$app" ] && sed -i '/^NoDisplay=/d; $ a NoDisplay=true' "$LOCAL_APPS/$app" || true
+    done
+
+    # MIME Typy
+    local MIME_FILE="$USER_HOME/.config/mimeapps.list"
     [ ! -f "$MIME_FILE" ] && echo "[Default Applications]" > "$MIME_FILE"
     grep -q "^\[Default Applications\]" "$MIME_FILE" || echo "[Default Applications]" >> "$MIME_FILE"
 
-    # Pomocná lokální funkce pro bezpečný zápis/přepis
     set_default_app() {
         local mime="$1"
         local app="$2"
-        # Smaže starý záznam (pokud existuje) a vloží nový hned pod hlavičku
         sed -i "/^${mime//\//\\/}=/d" "$MIME_FILE" 2>/dev/null || true
         sed -i "/^\[Default Applications\]/a ${mime}=${app};" "$MIME_FILE"
     }
 
-    # TXT -> FeatherPad
     set_default_app "text/plain" "featherpad.desktop"
-    
-    # DEB balíčky -> GDebi
     set_default_app "application/vnd.debian.binary-package" "gdebi.desktop"
-
-    # EXE soubory -> Wine (pouze pokud bylo zvoleno k instalaci)
-    if [ "$WINE_CHOICE" == "1" ]; then # Změň na svou proměnnou z dotazníku
+    if [ "$WINE_CHOICE" == "1" ]; then
         set_default_app "application/x-ms-dos-executable" "wine.desktop"
         set_default_app "application/x-msdownload" "wine.desktop"
         set_default_app "application/x-ms-shortcut" "wine.desktop"
     fi
-
-    # Videa -> VLC
     set_default_app "video/mp4" "vlc.desktop"
     set_default_app "video/x-matroska" "vlc.desktop"
     set_default_app "video/x-msvideo" "vlc.desktop"
@@ -693,28 +681,20 @@ configure_lxqt() {
     set_default_app "video/quicktime" "vlc.desktop"
     set_default_app "video/x-flv" "vlc.desktop"
 
-    # DOCX -> Podle výběru v dotazníku
     if [ "$OFFICE_CHOICE" == "1" ]; then
         set_default_app "application/vnd.openxmlformats-officedocument.wordprocessingml.document" "libreoffice-writer.desktop"
     elif [ "$OFFICE_CHOICE" == "2" ]; then
         set_default_app "application/vnd.openxmlformats-officedocument.wordprocessingml.document" "onlyoffice-desktopeditors.desktop"
     fi
-    # -------------------------------------
 
-    # --- AUTORUN APLIKACÍ ---
-    log "Zpracovávám sekci [AUTORUN] pro aplikace po spuštění..."
+    # Autostart
     local AUTOSTART_DIR="$USER_HOME/.config/autostart"
     mkdir -p "$AUTOSTART_DIR"
-
-    # Přečteme obsah sekce [AUTORUN] z tvého config.txt
     AUTORUN_APPS=$(awk '/^\[AUTORUN\]/{flag=1; next} /^\[/{flag=0} flag && NF' "$CONTENTS_DIR/lxqt/config.txt")
 
     if [ -n "$AUTORUN_APPS" ]; then
         for APP in $AUTORUN_APPS; do
-            log "Přidávám '$APP' do autostartu..."
             local DEST_DESKTOP="$AUTOSTART_DIR/${APP}-autostart.desktop"
-            
-            # Vytvoření univerzálního autostart souboru
             echo "[Desktop Entry]" > "$DEST_DESKTOP"
             echo "Type=Application" >> "$DEST_DESKTOP"
             echo "Name=Autostart $APP" >> "$DEST_DESKTOP"
@@ -723,16 +703,28 @@ configure_lxqt() {
             echo "NoDisplay=false" >> "$DEST_DESKTOP"
             echo "X-GNOME-Autostart-enabled=true" >> "$DEST_DESKTOP"
         done
-        
-        # Oprava práv – tohle je důležité, aby si LXQt nestěžovalo, že to vlastní root
-        chown -R "$REAL_USER:$REAL_USER" "$AUTOSTART_DIR"
-    else
-        log "Žádné aplikace v sekci [AUTORUN] nebyly nalezeny."
     fi
-    # ------------------------
-
-    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" || true
 }
+
+configure_lxqt() {
+    log "=== ZAHAJUJI KOMPLEXNÍ KONFIGURACI LXQT ==="
+    
+    lxqt_prepare_base_configs
+    lxqt_install_theme_and_icons
+    lxqt_setup_system_integrations
+    lxqt_setup_wm_and_panel
+    lxqt_setup_shortcuts_and_menus
+    lxqt_setup_apps_and_defaults
+    
+    log "7/7: Zabezpečuji vlastnická práva uživatele..."
+    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" || true
+    
+    log "=== KONFIGURACE LXQT BYLA ÚSPĚŠNĚ DOKONČENA ==="
+}
+
+# ==============================================================================
+# KONFIGURACE KDE PLASMA
+# ==============================================================================
 
 configure_plasma() {
     log "Aplikuji specifické nastavení pro Plasmu..."
@@ -924,6 +916,7 @@ hardware_detection() {
 # ==============================================================================
 
 main() {
+    init_script
     init_setup
     prepare_system
     install_packages
@@ -938,20 +931,16 @@ main() {
     setup_display_manager
     setup_boot
     admin_security
-
     rm -rf debiconf
-
     echo "=================================================="
     echo "HOTOVO"
     echo "RESTART ZA 5 SEKUND..."
     echo "=================================================="
-
     for i in {5..1}
     do
         echo "$i..."
         sleep 1
     done
-
     echo "Restartuji nyní!"
     reboot
 }
