@@ -657,14 +657,14 @@ lxqt_setup_apps_and_defaults() {
 
     # --- MIME Typy ---
     local MIME_FILE="$USER_HOME/.config/mimeapps.list"
-    [ ! -f "$MIME_FILE" ] && echo "[Default Applications]" > "$MIME_FILE"
-    grep -q "^\[Default Applications\]" "$MIME_FILE" || echo "[Default Applications]" >> "$MIME_FILE"
+    [ ! -f "$MIME_FILE" ] && echo "[Added Associations]" > "$MIME_FILE"
+    grep -q "^\[Added Associations\]" "$MIME_FILE" || echo "[Added Associations]" >> "$MIME_FILE"
 
     set_default_app() {
         local mime="$1"
         local app="$2"
         sed -i "/^${mime//\//\\/}=/d" "$MIME_FILE" 2>/dev/null || true
-        sed -i "/^\[Default Applications\]/a ${mime}=${app};" "$MIME_FILE"
+        sed -i "/^\[Added Associations\]/a ${mime}=${app};" "$MIME_FILE"
     }
 
     local APPS_CONF="$CONTENTS_DIR/lxqt/config/defaultapps.conf"
