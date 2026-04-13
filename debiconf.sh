@@ -485,7 +485,7 @@ lxqt_install_theme_and_icons() {
 }
 
 lxqt_setup_system_integrations() {
-    log "3/7: Nasazuji systémové integrace (Skripty, APT hook, Locale, Polkit)..."
+    log "3/7: Nasazuji systémové integrace (Skripty, APT hook, Locale, Polkit, NM-Tray)..."
     
     local SCRIPTS_SRC="$CONTENTS_DIR/lxqt/scripts"
     mkdir -p "$USER_HOME/.local/bin"
@@ -513,6 +513,21 @@ lxqt_setup_system_integrations() {
     if [ -f "$TOUCHPAD_SRC" ]; then
         cp "$TOUCHPAD_SRC" /etc/X11/xorg.conf.d/40-libinput-touchpad.conf || true
     fi
+
+    # --- OPRAVA NM-TRAY (Lubuntu styl) ---
+    log "Přesměrovávám nm-tray na pokročilý network-manager-gnome editor..."
+    local NM_TRAY_DIR="$USER_HOME/.config/nm-tray"
+    mkdir -p "$NM_TRAY_DIR"
+    local NM_TRAY_CONF="$NM_TRAY_DIR/nm-tray.conf"
+    
+    if [ ! -f "$NM_TRAY_CONF" ]; then
+        echo -e "[general]\nconnectionsEditor=nm-connection-editor" > "$NM_TRAY_CONF"
+    else
+        # Pro jistotu, kdyby tam už nějaký záznam byl (při opakovaném spuštění skriptu)
+        sed -i '/^connectionsEditor=/d' "$NM_TRAY_CONF"
+        sed -i '/^\[general\]/a connectionsEditor=nm-connection-editor' "$NM_TRAY_CONF" 2>/dev/null || echo -e "\n[general]\nconnectionsEditor=nm-connection-editor" >> "$NM_TRAY_CONF"
+    fi
+    # --------------------------------------
 }
 
 lxqt_setup_wm_and_panel() {
