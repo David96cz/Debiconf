@@ -580,7 +580,11 @@ lxqt_setup_shortcuts_and_menus() {
     local SHORTCUTS_SRC="$CONTENTS_DIR/lxqt/config/shortcuts.conf"
     local SHORTCUTS_CONF="$USER_HOME/.config/lxqt/globalkeyshortcuts.conf"
     
-    if [ -f "$SHORTCUTS_SRC" ] && [ -f "$SHORTCUTS_CONF" ]; then
+    if [ -f "$SHORTCUTS_SRC" ]; then
+        # Pojistka: Vytvoříme složku a prázdný soubor, pokud ještě neexistuje
+        mkdir -p "$(dirname "$SHORTCUTS_CONF")"
+        touch "$SHORTCUTS_CONF"
+        
         sed -i '/\.99\]/,+3d' "$SHORTCUTS_CONF" 2>/dev/null || true
         while IFS='|' read -r label shortcut cmd || [[ -n "$label" ]]; do
             [[ "$label" =~ ^#.*$ || -z "$label" ]] && continue
