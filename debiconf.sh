@@ -533,32 +533,6 @@ lxqt_setup_system_integrations() {
     local AUTOSTART_DIR="$USER_HOME/.config/autostart"
     mkdir -p "$AUTOSTART_DIR"
     echo -e "[Desktop Entry]\nHidden=true" > "$AUTOSTART_DIR/nm-applet.desktop"
-
-    # --- ZÁLOHA A AUTOMATICKÁ OBNOVA (Blbuvzdornost výhradně pro .config) ---
-    log "Vytvářím systémovou zálohu .config a spouštěč pro automatickou obnovu..."
-    
-    # 0. Nasazení "kanárka" - tajný soubor, podle kterého poznáme, že je profil náš
-    touch "$USER_HOME/.config/lxqt/.debiconf_ok"
-    
-    # 1. Čistá záloha výhradně pro .config (bezpečně mimo /etc/skel)
-    mkdir -p /opt/debiconf-backup
-    cp -r "$USER_HOME/.config" /opt/debiconf-backup/
-    
-    # EXTRÉMNĚ DŮLEŽITÉ: Záloha musí být čitelná pro všechny
-    chmod -R 755 /opt/debiconf-backup/.config
-    
-    # 2. Záchranný skript (Běží při KAŽDÉM přihlášení – po startu i po odhlášení)
-    local RESTORE_SCRIPT="/etc/X11/Xsession.d/90debiconf-restore"
-    
-    echo '# Kontrola na základě chybějícího kanárka, ignorujeme defaultní LXQt složku' > "$RESTORE_SCRIPT"
-    echo 'if [ ! -f "$HOME/.config/lxqt/.debiconf_ok" ]; then' >> "$RESTORE_SCRIPT"
-    echo '    mkdir -p "$HOME/.config"' >> "$RESTORE_SCRIPT"
-    echo '    # Potichu a natvrdo (-f) přepíšeme defaultní balast naší zálohou' >> "$RESTORE_SCRIPT"
-    echo '    cp -rf /opt/debiconf-backup/.config/. "$HOME/.config/" 2>/dev/null || true' >> "$RESTORE_SCRIPT"
-    echo 'fi' >> "$RESTORE_SCRIPT"
-    
-    chmod 644 "$RESTORE_SCRIPT"
-    # -------------------------------------------------------------
 }
 
 lxqt_setup_wm_and_panel() {
@@ -767,6 +741,35 @@ lxqt_setup_apps_and_defaults() {
     fi
 }
 
+lxqt_config_backup() {
+    # --- ZÁLOHA A AUTOMATICKÁ OBNOVA (100% TAR Snapshot) ---
+    log "Vytvářím 1:1 TAR snapshot .config pro absolutní blbuvzdornost..."
+    
+    # 0. Nasazení kanárka (tajný soubor)
+    touch "$USER_HOME/.config/lxqt/.debiconf_ok"
+    
+    # 1. Čistá záloha do archivu (Zaručí zachování struktury a zamezí slučování zmetků)
+    mkdir -p /opt/debiconf-backup
+    tar -czf /opt/debiconf-backup/config.tar.gz -C "$USER_HOME" .config
+    
+    # Zabezpečíme, aby si to uživatel mohl po přihlášení sám rozbalit
+    chmod 644 /opt/debiconf-backup/config.tar.gz
+    
+    # 2. Záchranný skript (Běží při KAŽDÉM přihlášení)
+    local RESTORE_SCRIPT="/etc/X11/Xsession.d/90debiconf-restore"
+    
+    echo '# Kontrola na základě chybějícího kanárka' > "$RESTORE_SCRIPT"
+    echo 'if [ ! -f "$HOME/.config/lxqt/.debiconf_ok" ]; then' >> "$RESTORE_SCRIPT"
+    echo '    # 1. Nemilosrdně smazat zmetka, kterého LXQt vytvořilo při odhlášení' >> "$RESTORE_SCRIPT"
+    echo '    rm -rf "$HOME/.config/lxqt"' >> "$RESTORE_SCRIPT"
+    echo '    # 2. Rozbalit čistý 1:1 snapshot přesně tak, jak byl nastaven při instalaci' >> "$RESTORE_SCRIPT"
+    echo '    tar -xzf /opt/debiconf-backup/config.tar.gz -C "$HOME"' >> "$RESTORE_SCRIPT"
+    echo 'fi' >> "$RESTORE_SCRIPT"
+    
+    chmod 644 "$RESTORE_SCRIPT"
+    # -------------------------------------------------------------
+}
+
 configure_lxqt() {
     log "=== ZAHAJUJI KOMPLEXNÍ KONFIGURACI LXQT ==="
     
@@ -779,6 +782,8 @@ configure_lxqt() {
     
     log "7/7: Zabezpečuji vlastnická práva uživatele..."
     chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" || true
+
+    lxqt_config_backup
     
     log "=== KONFIGURACE LXQT BYLA ÚSPĚŠNĚ DOKONČENA ==="
 }
