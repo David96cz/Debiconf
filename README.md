@@ -6,7 +6,10 @@ Debian 13.4.0
 AMD64: http://debian-cd.mirror.web4u.cz/13.4.0/amd64/iso-cd/debian-13.4.0-amd64-netinst.iso
 
 ARM64: http://debian-cd.mirror.web4u.cz/13.4.0/arm64/iso-cd/debian-13.4.0-arm64-netinst.iso
+--------------------------------------------------
+!! INSTALOVAT VÝHRADNĚ BEZ DESKTOPOVÉHO PROSTŘEDÍ BĚHEM INSTALACE SAMOTNÉHO SYSTÉMU - ZDE PONECHAT POUZE "STANDARDNÍ SYSTÉMOVÉ NÁSTROJE" !!
 
+![isntalace](https://github.com/user-attachments/assets/adadc571-b858-418c-994d-62d8b1de72dd)
 --------------------------------------------------
 
 Po dokončení čisté netinst instalace bez prostředí:
