@@ -543,7 +543,6 @@ lxqt_setup_system_integrations() {
         apt-get install -f -y
     fi
 
-    install_packages() {
     log "Instaluji balíčky a externí aplikace (Albert & PeaZip čistě pro amd64)..."
 
     # Kontrola architektury - pokud to není amd64, pošleme to do prdele
@@ -589,7 +588,6 @@ lxqt_setup_system_integrations() {
     else
         log "CHYBA: Nepodařilo se získat odkaz na PeaZip z GitHubu."
     fi
-}
 }
 
 lxqt_setup_wm_and_panel() {
