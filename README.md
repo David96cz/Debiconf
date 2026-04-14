@@ -39,7 +39,7 @@ Po dokončení čisté netinst instalace bez prostředí:
 **KDE Plasma**
 - lehce vyšší HW požadavky, avšak díky skvělé optimalizaci stále vhodné i na starší PC (Intel 3. generace a vyšší ideálně, 4GB RAM)
 - spotřeba RAM po startu cca *800-1200MB*
-- ready out of the box pro běžného uživatele, obrovská možnost customizace, široké nastavení, skoro vše jde vyklikat, bez nutnosti na většinu věcí používat terminál, moderní vzhled a funkce
+- ready out of the box pro běžného uživatele, obrovská možnost customizace, široké nastavení, skoro vše jde vyklikat GUI, moderní vzhled a funkce
   
 ![plasma](https://github.com/user-attachments/assets/9d313503-b97b-49d1-b5a1-0ae01faade75)
 
