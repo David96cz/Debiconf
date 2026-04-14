@@ -537,22 +537,24 @@ lxqt_setup_system_integrations() {
     # --- ZÁLOHA A AUTOMATICKÁ OBNOVA (Blbuvzdornost výhradně pro .config) ---
     log "Vytvářím systémovou zálohu .config a spouštěč pro automatickou obnovu..."
     
+    # 0. Nasazení "kanárka" - tajný soubor, podle kterého poznáme, že je profil náš
+    touch "$USER_HOME/.config/lxqt/.debiconf_ok"
+    
     # 1. Čistá záloha výhradně pro .config (bezpečně mimo /etc/skel)
     mkdir -p /opt/debiconf-backup
     cp -r "$USER_HOME/.config" /opt/debiconf-backup/
     
-    # EXTRÉMNĚ DŮLEŽITÉ: Záloha musí být čitelná pro všechny, aby si ji uživatelův profil 
-    # mohl po přihlášení sám přečíst a zkopírovat zpět.
+    # EXTRÉMNĚ DŮLEŽITÉ: Záloha musí být čitelná pro všechny
     chmod -R 755 /opt/debiconf-backup/.config
     
     # 2. Záchranný skript (Běží při KAŽDÉM přihlášení – po startu i po odhlášení)
     local RESTORE_SCRIPT="/etc/X11/Xsession.d/90debiconf-restore"
     
-    echo '# Pokud chybí hlavní složka LXQt (uživatel smazal config)' > "$RESTORE_SCRIPT"
-    echo 'if [ ! -d "$HOME/.config/lxqt" ]; then' >> "$RESTORE_SCRIPT"
+    echo '# Kontrola na základě chybějícího kanárka, ignorujeme defaultní LXQt složku' > "$RESTORE_SCRIPT"
+    echo 'if [ ! -f "$HOME/.config/lxqt/.debiconf_ok" ]; then' >> "$RESTORE_SCRIPT"
     echo '    mkdir -p "$HOME/.config"' >> "$RESTORE_SCRIPT"
-    echo '    # Kopírujeme OBSAH záložní složky (díky syntaxi "/." to vezme všechno, i skryté)' >> "$RESTORE_SCRIPT"
-    echo '    cp -r /opt/debiconf-backup/.config/. "$HOME/.config/" 2>/dev/null || true' >> "$RESTORE_SCRIPT"
+    echo '    # Potichu a natvrdo (-f) přepíšeme defaultní balast naší zálohou' >> "$RESTORE_SCRIPT"
+    echo '    cp -rf /opt/debiconf-backup/.config/. "$HOME/.config/" 2>/dev/null || true' >> "$RESTORE_SCRIPT"
     echo 'fi' >> "$RESTORE_SCRIPT"
     
     chmod 644 "$RESTORE_SCRIPT"
@@ -990,7 +992,7 @@ main() {
     setup_display_manager
     setup_boot
     admin_security
-    rm -rf debiconf
+    rm -rf "$BASE_DIR"
     echo "=================================================="
     echo "HOTOVO"
     echo "RESTART ZA 5 SEKUND..."
