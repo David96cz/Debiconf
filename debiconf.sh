@@ -533,6 +533,61 @@ lxqt_setup_system_integrations() {
     local AUTOSTART_DIR="$USER_HOME/.config/autostart"
     mkdir -p "$AUTOSTART_DIR"
     echo -e "[Desktop Entry]\nHidden=true" > "$AUTOSTART_DIR/nm-applet.desktop"
+
+    log "Instaluji lokální balíčky (Albert, PeaZip)..."
+    local LOCAL_DEBS="$CONTENTS_DIR/packages"
+    if [ -d "$LOCAL_DEBS" ]; then
+        # Najde všechny .deb soubory a potichu je nainstaluje
+        find "$LOCAL_DEBS" -name "*.deb" -exec dpkg -i {} \; 2>/dev/null || true
+        # Automaticky dotočí chybějící závislosti, které ty balíčky vyžadují
+        apt-get install -f -y
+    fi
+
+    log "Instaluji balíčky a externí aplikace (Albert & PeaZip)..."
+
+    # 1. Albert - Přidání repozitáře pro Debian 13 (Trixie/Testing)
+    curl -fsSL https://download.opensuse.org/repositories/home:manuelschneid3r/Debian_Testing/Release.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/home_manuelschneid3r.gpg > /dev/null
+    echo 'deb http://download.opensuse.org/repositories/home:/manuelschneid3r/Debian_Testing/ /' | tee /etc/apt/sources.list.d/albert.list
+    
+    apt-get update -y
+    apt-get install -y albert
+
+    # 2. PeaZip - Dynamická volba podle architektury
+    local SYS_ARCH=$(dpkg --print-architecture)
+    
+    if [ "$SYS_ARCH" == "amd64" ]; then
+        log "Stahuji nejnovější PeaZip pro PC (amd64)..."
+        local PEAZIP_URL=$(curl -s https://api.github.com/repos/peazip/PeaZip/releases/latest | grep "browser_download_url" | grep "Qt5" | grep "amd64.deb" | cut -d '"' -f 4)
+        if [ -n "$PEAZIP_URL" ]; then
+            wget -qO /tmp/peazip_latest.deb "$PEAZIP_URL"
+            dpkg -i /tmp/peazip_latest.deb || apt-get install -f -y
+            rm -f /tmp/peazip_latest.deb
+        fi
+
+    elif [ "$SYS_ARCH" == "arm64" ] || [ "$SYS_ARCH" == "aarch64" ]; then
+        log "Stahuji nejnovější PeaZip pro ARM (Portable)..."
+        local PEAZIP_URL=$(curl -s https://api.github.com/repos/peazip/PeaZip/releases/latest | grep "browser_download_url" | grep "aarch64" | grep "tar.gz" | cut -d '"' -f 4 | head -n 1)
+        if [ -n "$PEAZIP_URL" ]; then
+            wget -qO /tmp/peazip_portable.tar.gz "$PEAZIP_URL"
+            mkdir -p /opt/peazip
+            tar -xzf /tmp/peazip_portable.tar.gz -C /opt/peazip --strip-components=1
+            ln -sf /opt/peazip/peazip /usr/bin/peazip
+            rm -f /tmp/peazip_portable.tar.gz
+
+            # Vytvoření .desktop souboru bez EOF
+            local DESKTOP_PATH="/usr/share/applications/peazip.desktop"
+            echo "[Desktop Entry]" > "$DESKTOP_PATH"
+            echo "Name=PeaZip" >> "$DESKTOP_PATH"
+            echo "Exec=/usr/bin/peazip %F" >> "$DESKTOP_PATH"
+            echo "Icon=peazip" >> "$DESKTOP_PATH"
+            echo "Terminal=false" >> "$DESKTOP_PATH"
+            echo "Type=Application" >> "$DESKTOP_PATH"
+            echo "Categories=Utility;Archiving;" >> "$DESKTOP_PATH"
+            echo "MimeType=application/zip;application/vnd.rar;application/x-7z-compressed;application/x-tar;application/gzip;application/x-bzip2;application/x-xz;" >> "$DESKTOP_PATH"
+            chmod 644 "$DESKTOP_PATH"
+            update-desktop-database /usr/share/applications/ 2>/dev/null || true
+        fi
+    fi
 }
 
 lxqt_setup_wm_and_panel() {
@@ -739,6 +794,34 @@ lxqt_setup_apps_and_defaults() {
             echo "X-GNOME-Autostart-enabled=true" >> "$DEST_DESKTOP"
         done
     fi
+
+    # --- KONFIGURACE ALBERT A PEAZIP (Dynamické cesty) ---
+    log "Nasazuji konfigurace pro Albert a PeaZip..."
+    
+    # 1. Albert
+    local ALBERT_SRC="$CONTENTS_DIR/lxqt/config/albert.conf"
+    local ALBERT_DEST="$USER_HOME/.config/albert/config"
+    if [ -f "$ALBERT_SRC" ]; then
+        mkdir -p "$(dirname "$ALBERT_DEST")"
+        cp "$ALBERT_SRC" "$ALBERT_DEST"
+        
+        # Nahrazení normální cesty (/home/david -> /home/novyuzivatel)
+        sed -i "s|/home/david|$USER_HOME|g" "$ALBERT_DEST"
+        # Nahrazení Qt escapované cesty (home\david -> home\novyuzivatel)
+        sed -i "s|home\\\\david|home\\\\$REAL_USER|g" "$ALBERT_DEST"
+    fi
+
+    # 2. PeaZip
+    local PEAZIP_SRC="$CONTENTS_DIR/lxqt/config/peazip.conf"
+    local PEAZIP_DEST="$USER_HOME/.config/peazip/conf.txt"
+    if [ -f "$PEAZIP_SRC" ]; then
+        mkdir -p "$(dirname "$PEAZIP_DEST")"
+        cp "$PEAZIP_SRC" "$PEAZIP_DEST"
+        
+        # Nahrazení normální cesty
+        sed -i "s|/home/david|$USER_HOME|g" "$PEAZIP_DEST"
+    fi
+    # -----------------------------------------------------
 }
 
 lxqt_config_backup() {

@@ -19,3 +19,4 @@ yad-icon-browser.desktop
 
 [AUTORUN]
 copyq
+albert
