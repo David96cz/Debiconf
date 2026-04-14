@@ -543,51 +543,53 @@ lxqt_setup_system_integrations() {
         apt-get install -f -y
     fi
 
-    log "Instaluji balíčky a externí aplikace (Albert & PeaZip)..."
+    install_packages() {
+    log "Instaluji balíčky a externí aplikace (Albert & PeaZip čistě pro amd64)..."
 
-    # 1. Albert - Přidání repozitáře pro Debian 13 (Trixie/Testing)
-    curl -fsSL https://download.opensuse.org/repositories/home:manuelschneid3r/Debian_Testing/Release.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/home_manuelschneid3r.gpg > /dev/null
-    echo 'deb http://download.opensuse.org/repositories/home:/manuelschneid3r/Debian_Testing/ /' | tee /etc/apt/sources.list.d/albert.list
+    # Kontrola architektury - pokud to není amd64, pošleme to do prdele
+    local SYS_ARCH=$(dpkg --print-architecture)
+    if [ "$SYS_ARCH" != "amd64" ]; then
+        log "UPOZORNĚNÍ: Architektura $SYS_ARCH. Tento skript instaluje externí aplikace pouze pro amd64. Přeskakuji."
+        return 0
+    fi
+
+    # 1. Albert - Správná cesta pro Debian 13
+    log "Nasazuji oficiální repozitář Alberta pro Debian 13..."
+    curl -fsSL https://download.opensuse.org/repositories/home:manuelschneid3r/Debian_13/Release.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/home_manuelschneid3r.gpg > /dev/null
+    echo 'deb http://download.opensuse.org/repositories/home:/manuelschneid3r/Debian_13/ /' | tee /etc/apt/sources.list.d/albert.list
     
     apt-get update -y
-    apt-get install -y albert
-
-    # 2. PeaZip - Dynamická volba podle architektury
-    local SYS_ARCH=$(dpkg --print-architecture)
     
-    if [ "$SYS_ARCH" == "amd64" ]; then
-        log "Stahuji nejnovější PeaZip pro PC (amd64)..."
-        local PEAZIP_URL=$(curl -s https://api.github.com/repos/peazip/PeaZip/releases/latest | grep "browser_download_url" | grep "Qt5" | grep "amd64.deb" | cut -d '"' -f 4)
-        if [ -n "$PEAZIP_URL" ]; then
-            wget -qO /tmp/peazip_latest.deb "$PEAZIP_URL"
-            dpkg -i /tmp/peazip_latest.deb || apt-get install -f -y
-            rm -f /tmp/peazip_latest.deb
-        fi
-
-    elif [ "$SYS_ARCH" == "arm64" ] || [ "$SYS_ARCH" == "aarch64" ]; then
-        log "Stahuji nejnovější PeaZip pro ARM (Portable)..."
-        local PEAZIP_URL=$(curl -s https://api.github.com/repos/peazip/PeaZip/releases/latest | grep "browser_download_url" | grep "aarch64" | grep "tar.gz" | cut -d '"' -f 4 | head -n 1)
-        if [ -n "$PEAZIP_URL" ]; then
-            wget -qO /tmp/peazip_portable.tar.gz "$PEAZIP_URL"
-            mkdir -p /opt/peazip
-            tar -xzf /tmp/peazip_portable.tar.gz -C /opt/peazip --strip-components=1
-            ln -sf /opt/peazip/peazip /usr/bin/peazip
-            rm -f /tmp/peazip_portable.tar.gz
-
-            # Vytvoření .desktop souboru bez EOF
-            local DESKTOP_PATH="/usr/share/applications/peazip.desktop"
-            echo "[Desktop Entry]" > "$DESKTOP_PATH"
-            echo "Name=PeaZip" >> "$DESKTOP_PATH"
-            echo "Exec=/usr/bin/peazip %F" >> "$DESKTOP_PATH"
-            echo "Icon=peazip" >> "$DESKTOP_PATH"
-            echo "Terminal=false" >> "$DESKTOP_PATH"
-            echo "Type=Application" >> "$DESKTOP_PATH"
-            echo "Categories=Utility;Archiving;" >> "$DESKTOP_PATH"
-            echo "MimeType=application/zip;application/vnd.rar;application/x-7z-compressed;application/x-tar;application/gzip;application/x-bzip2;application/x-xz;" >> "$DESKTOP_PATH"
-            chmod 644 "$DESKTOP_PATH"
-            update-desktop-database /usr/share/applications/ 2>/dev/null || true
+    # Zkusíme instalaci přes apt (pro automatické updaty v budoucnu)
+    if ! apt-get install -y albert; then
+        log "CHYBA apt instalace. Přepínám na dynamické stažení .deb přímo z adresáře..."
+        
+        # Scraper: Najde přesný název aktuálního balíčku v HTML kódu té stránky
+        local ALBERT_BASE="https://download.opensuse.org/repositories/home:/manuelschneid3r/Debian_13/amd64/"
+        local ALBERT_FILE=$(curl -s "$ALBERT_BASE" | grep -oE 'albert_[^"]+_amd64\.deb' | head -n 1)
+        
+        if [ -n "$ALBERT_FILE" ]; then
+            log "Našel jsem balíček: $ALBERT_FILE. Stahuji..."
+            wget -qO "/tmp/$ALBERT_FILE" "${ALBERT_BASE}${ALBERT_FILE}"
+            dpkg -i "/tmp/$ALBERT_FILE" || apt-get install -f -y
+            rm -f "/tmp/$ALBERT_FILE"
+        else
+            log "FATÁLNÍ CHYBA: Na té adrese se nepodařilo najít žádný albert...amd64.deb!"
         fi
     fi
+
+    # 2. PeaZip - Dynamické stažení nejnovější Qt5 verze z GitHubu
+    log "Stahuji nejnovější PeaZip (amd64)..."
+    local PEAZIP_URL=$(curl -s https://api.github.com/repos/peazip/PeaZip/releases/latest | grep "browser_download_url" | grep "Qt5" | grep "amd64.deb" | cut -d '"' -f 4)
+    
+    if [ -n "$PEAZIP_URL" ]; then
+        wget -qO /tmp/peazip_latest.deb "$PEAZIP_URL"
+        dpkg -i /tmp/peazip_latest.deb || apt-get install -f -y
+        rm -f /tmp/peazip_latest.deb
+    else
+        log "CHYBA: Nepodařilo se získat odkaz na PeaZip z GitHubu."
+    fi
+}
 }
 
 lxqt_setup_wm_and_panel() {
