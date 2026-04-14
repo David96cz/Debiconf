@@ -10,7 +10,7 @@ ARM64: http://debian-cd.mirror.web4u.cz/13.4.0/arm64/iso-cd/debian-13.4.0-arm64-
 --------------------------------------------------
 **!! INSTALOVAT VÝHRADNĚ BEZ DESKTOPOVÉHO PROSTŘEDÍ BĚHEM INSTALACE SAMOTNÉHO SYSTÉMU - ZDE PONECHAT POUZE "STANDARDNÍ SYSTÉMOVÉ NÁSTROJE" !!**
 
-![isntalace](https://github.com/user-attachments/assets/adadc571-b858-418c-994d-62d8b1de72dd)
+![instalace](https://github.com/user-attachments/assets/09b934ce-8d9a-4a8f-863c-f3655eda5185)
 
 --------------------------------------------------
 
