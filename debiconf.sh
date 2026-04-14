@@ -691,11 +691,14 @@ lxqt_packages_install() {
         fi
     fi
 
-    # 2. PeaZip - Dynamické stažení nejnovější Qt5 verze z GitHubu
-    log "Stahuji nejnovější PeaZip (amd64)..."
-    local PEAZIP_URL=$(curl -s https://api.github.com/repos/peazip/PeaZip/releases/latest | grep "browser_download_url" | grep "Qt5" | grep "amd64.deb" | cut -d '"' -f 4)
+   # 2. PeaZip - Dynamické stažení nejnovější Qt6 verze z GitHubu
+    log "Stahuji nejnovější PeaZip..."
+    
+    # Přísný filtr: musí to obsahovat "browser_download_url", "LINUX.Qt6" a "amd64.deb"
+    local PEAZIP_URL=$(curl -s https://api.github.com/repos/peazip/PeaZip/releases/latest | grep "browser_download_url" | grep "LINUX.Qt6" | grep "amd64.deb" | cut -d '"' -f 4 | head -n 1)
     
     if [ -n "$PEAZIP_URL" ]; then
+        log "Našel jsem odkaz: $PEAZIP_URL"
         wget -qO /tmp/peazip_latest.deb "$PEAZIP_URL"
         dpkg -i /tmp/peazip_latest.deb || apt-get install -f -y
         rm -f /tmp/peazip_latest.deb
