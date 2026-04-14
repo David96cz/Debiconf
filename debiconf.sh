@@ -465,27 +465,8 @@ lxqt_prepare_base_configs() {
     [ ! -f "$Q_CONF" ] && echo -e "[General]\nshowTerminalSizeHint=false" > "$Q_CONF" || sed -i '/showTerminalSizeHint/d; /\[General\]/a showTerminalSizeHint=false' "$Q_CONF" || true
 }
 
-lxqt_install_theme_and_icons() {
-    log "2/7: Stahuji a aplikuji Lubuntu artwork a ikony..."
-    
-    cd /tmp && rm -rf lubuntu-rip && mkdir -p lubuntu-rip && cd lubuntu-rip
-    FILE_NAME=$(wget -qO- http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/ | grep -o 'lubuntu-artwork_[^"]*_all\.deb' | tail -n 1) || true
-    if [ -n "$FILE_NAME" ]; then
-        wget "http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/$FILE_NAME" -O lubuntu-artwork.deb || true
-        dpkg-deb -x lubuntu-artwork.deb root_dir || true
-        mkdir -p "$USER_HOME/.local/share/lxqt/themes"
-        cp -r root_dir/usr/share/lxqt/themes/* "$USER_HOME/.local/share/lxqt/themes/" 2>/dev/null || true
-    fi
-    cd ~ && rm -rf /tmp/lubuntu-rip || true
-
-    local ICONS_SRC="$CONTENTS_DIR/lxqt/icons"
-    if [ -d "$ICONS_SRC" ]; then
-        cp -r "$ICONS_SRC" "$USER_HOME/.local/share/" 2>/dev/null || true
-    fi
-}
-
 lxqt_setup_system_integrations() {
-    log "3/7: Nasazuji systémové integrace (Skripty, APT hook, Locale, Polkit, NM-Tray)..."
+    log "2/7: Nasazuji systémové integrace (Skripty, APT hook, Locale, Polkit, NM-Tray)..."
     
     local SCRIPTS_SRC="$CONTENTS_DIR/lxqt/scripts"
     mkdir -p "$USER_HOME/.local/bin"
@@ -514,7 +495,7 @@ lxqt_setup_system_integrations() {
         cp "$TOUCHPAD_SRC" /etc/X11/xorg.conf.d/40-libinput-touchpad.conf || true
     fi
 
-    # --- OPRAVA NM-TRAY (Lubuntu styl) ---
+    # --- OPRAVA NM-TRAY  ---
     log "Přesměrovávám nm-tray na Gnome editor a blokuji duplicitní ikonu..."
     
     # 1. Přesměrování editoru
@@ -533,67 +514,29 @@ lxqt_setup_system_integrations() {
     local AUTOSTART_DIR="$USER_HOME/.config/autostart"
     mkdir -p "$AUTOSTART_DIR"
     echo -e "[Desktop Entry]\nHidden=true" > "$AUTOSTART_DIR/nm-applet.desktop"
-
-    log "Instaluji lokální balíčky (Albert, PeaZip)..."
-    local LOCAL_DEBS="$CONTENTS_DIR/packages"
-    if [ -d "$LOCAL_DEBS" ]; then
-        # Najde všechny .deb soubory a potichu je nainstaluje
-        find "$LOCAL_DEBS" -name "*.deb" -exec dpkg -i {} \; 2>/dev/null || true
-        # Automaticky dotočí chybějící závislosti, které ty balíčky vyžadují
-        apt-get install -f -y
-    fi
-
-    log "Instaluji balíčky a externí aplikace (Albert & PeaZip čistě pro amd64)..."
-
-    # Kontrola architektury - pokud to není amd64, pošleme to do prdele
-    local SYS_ARCH=$(dpkg --print-architecture)
-    if [ "$SYS_ARCH" != "amd64" ]; then
-        log "UPOZORNĚNÍ: Architektura $SYS_ARCH. Tento skript instaluje externí aplikace pouze pro amd64. Přeskakuji."
-        return 0
-    fi
-
-    # 1. Albert - Správná cesta pro Debian 13
-    log "Nasazuji oficiální repozitář Alberta pro Debian 13..."
-    curl -fsSL https://download.opensuse.org/repositories/home:manuelschneid3r/Debian_13/Release.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/home_manuelschneid3r.gpg > /dev/null
-    echo 'deb http://download.opensuse.org/repositories/home:/manuelschneid3r/Debian_13/ /' | tee /etc/apt/sources.list.d/albert.list
-    
-    apt-get update -y
-    
-    # Zkusíme instalaci přes apt (pro automatické updaty v budoucnu)
-    if ! apt-get install -y albert; then
-        log "CHYBA apt instalace. Přepínám na dynamické stažení .deb přímo z adresáře..."
-        
-        # Scraper: Najde přesný název aktuálního balíčku v HTML kódu té stránky
-        local ALBERT_BASE="https://download.opensuse.org/repositories/home:/manuelschneid3r/Debian_13/amd64/"
-        local ALBERT_FILE=$(curl -s "$ALBERT_BASE" | grep -oE 'albert_[^"]+_amd64\.deb' | head -n 1)
-        
-        if [ -n "$ALBERT_FILE" ]; then
-            log "Našel jsem balíček: $ALBERT_FILE. Stahuji..."
-            wget -qO "/tmp/$ALBERT_FILE" "${ALBERT_BASE}${ALBERT_FILE}"
-            dpkg -i "/tmp/$ALBERT_FILE" || apt-get install -f -y
-            rm -f "/tmp/$ALBERT_FILE"
-        else
-            log "FATÁLNÍ CHYBA: Na té adrese se nepodařilo najít žádný albert...amd64.deb!"
-        fi
-    fi
-
-    # 2. PeaZip - Dynamické stažení nejnovější Qt5 verze z GitHubu
-    log "Stahuji nejnovější PeaZip (amd64)..."
-    local PEAZIP_URL=$(curl -s https://api.github.com/repos/peazip/PeaZip/releases/latest | grep "browser_download_url" | grep "Qt5" | grep "amd64.deb" | cut -d '"' -f 4)
-    
-    if [ -n "$PEAZIP_URL" ]; then
-        wget -qO /tmp/peazip_latest.deb "$PEAZIP_URL"
-        dpkg -i /tmp/peazip_latest.deb || apt-get install -f -y
-        rm -f /tmp/peazip_latest.deb
-    else
-        log "CHYBA: Nepodařilo se získat odkaz na PeaZip z GitHubu."
-    fi
 }
 
-lxqt_setup_wm_and_panel() {
-    log "4/7: Konfiguruji správce oken (XFWM4) a LXQt panel..."
+lxqt_setup_appearance() {
+    log "3/7: Konfiguruji vzhled (stažení motivu, správce oken, panel, ikony)..."
     
-    # XFWM4 Session
+    # 1. Stažení a příprava grafických podkladů (Lubuntu Artwork)
+    log "Stahuji Lubuntu artwork a nasazuji ikony..."
+    cd /tmp && rm -rf lubuntu-rip && mkdir -p lubuntu-rip && cd lubuntu-rip
+    local FILE_NAME=$(wget -qO- http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/ | grep -o 'lubuntu-artwork_[^"]*_all\.deb' | tail -n 1) || true
+    if [ -n "$FILE_NAME" ]; then
+        wget "http://archive.ubuntu.com/ubuntu/pool/universe/l/lubuntu-artwork/$FILE_NAME" -O lubuntu-artwork.deb || true
+        dpkg-deb -x lubuntu-artwork.deb root_dir || true
+        mkdir -p "$USER_HOME/.local/share/lxqt/themes"
+        cp -r root_dir/usr/share/lxqt/themes/* "$USER_HOME/.local/share/lxqt/themes/" 2>/dev/null || true
+    fi
+    cd ~ && rm -rf /tmp/lubuntu-rip || true
+
+    local ICONS_SRC="$CONTENTS_DIR/lxqt/icons"
+    if [ -d "$ICONS_SRC" ]; then
+        cp -r "$ICONS_SRC" "$USER_HOME/.local/share/" 2>/dev/null || true
+    fi
+
+    # 2. XFWM4 Session
     local SESSION_CONF="$USER_HOME/.config/lxqt/session.conf"
     if [ ! -f "$SESSION_CONF" ]; then
         echo -e "[General]\nwindow_manager=xfwm4" > "$SESSION_CONF"
@@ -612,7 +555,7 @@ lxqt_setup_wm_and_panel() {
         rm -f /tmp/xfwm-apply.sh
     fi
 
-    # Architektura panelu
+    # 3. Architektura panelu
     local CONF_SRC="$CONTENTS_DIR/lxqt/config"
     if [ "$SYS_ARCH" = "amd64" ] && [ -f "$CONF_SRC/lxqt-panel_no_about_amd64" ]; then
         mv /usr/bin/lxqt-panel /usr/bin/lxqt-panel.bak 2>/dev/null || true
@@ -624,7 +567,7 @@ lxqt_setup_wm_and_panel() {
         chmod +x /usr/bin/lxqt-panel || true
     fi
 
-    # Panel ikony a quicklaunch
+    # 4. Panel ikony a quicklaunch
     local PANEL_CONF="$USER_HOME/.config/lxqt/panel.conf"
     local LOCAL_APPS="$USER_HOME/.local/share/applications"
     if [ -f "$PANEL_CONF" ]; then
@@ -650,7 +593,7 @@ lxqt_setup_wm_and_panel() {
 }
 
 lxqt_setup_shortcuts_and_menus() {
-    log "5/7: Kompiluji klávesové zkratky a vlastní kontextová menu..."
+    log "4/7: Přidávám klávesové zkratky a vlastní kontextová menu..."
     
     local SHORTCUTS_SRC="$CONTENTS_DIR/lxqt/config/shortcuts.conf"
     local SHORTCUTS_CONF="$USER_HOME/.config/lxqt/globalkeyshortcuts.conf"
@@ -709,6 +652,55 @@ lxqt_setup_shortcuts_and_menus() {
                 echo "$processed_line" >> "$CURRENT_FILE"
             fi
         done < "$SRC_ACTIONS"
+    fi
+}
+
+lxqt_packages_install() {
+        
+    log "5/7 Instaluji balíčky a externí aplikace (Albert & PeaZip čistě pro amd64)..."
+
+    # Kontrola architektury - pokud to není amd64, pošleme to do prdele
+    local SYS_ARCH=$(dpkg --print-architecture)
+    if [ "$SYS_ARCH" != "amd64" ]; then
+        log "UPOZORNĚNÍ: Architektura $SYS_ARCH. Tento skript instaluje externí aplikace pouze pro amd64. Přeskakuji."
+        return 0
+    fi
+
+    # 1. Albert - Správná cesta pro Debian 13
+    log "Nasazuji oficiální repozitář Alberta pro Debian 13..."
+    curl -fsSL https://download.opensuse.org/repositories/home:manuelschneid3r/Debian_13/Release.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/home_manuelschneid3r.gpg > /dev/null
+    echo 'deb http://download.opensuse.org/repositories/home:/manuelschneid3r/Debian_13/ /' | tee /etc/apt/sources.list.d/albert.list
+    
+    apt-get update -y
+    
+    # Zkusíme instalaci přes apt (pro automatické updaty v budoucnu)
+    if ! apt-get install -y albert; then
+        log "CHYBA apt instalace. Přepínám na dynamické stažení .deb přímo z adresáře..."
+        
+        # Scraper: Najde přesný název aktuálního balíčku v HTML kódu té stránky
+        local ALBERT_BASE="https://download.opensuse.org/repositories/home:/manuelschneid3r/Debian_13/amd64/"
+        local ALBERT_FILE=$(curl -s "$ALBERT_BASE" | grep -oE 'albert_[^"]+_amd64\.deb' | head -n 1)
+        
+        if [ -n "$ALBERT_FILE" ]; then
+            log "Našel jsem balíček: $ALBERT_FILE. Stahuji..."
+            wget -qO "/tmp/$ALBERT_FILE" "${ALBERT_BASE}${ALBERT_FILE}"
+            dpkg -i "/tmp/$ALBERT_FILE" || apt-get install -f -y
+            rm -f "/tmp/$ALBERT_FILE"
+        else
+            log "FATÁLNÍ CHYBA: Na té adrese se nepodařilo najít žádný albert...amd64.deb!"
+        fi
+    fi
+
+    # 2. PeaZip - Dynamické stažení nejnovější Qt5 verze z GitHubu
+    log "Stahuji nejnovější PeaZip (amd64)..."
+    local PEAZIP_URL=$(curl -s https://api.github.com/repos/peazip/PeaZip/releases/latest | grep "browser_download_url" | grep "Qt5" | grep "amd64.deb" | cut -d '"' -f 4)
+    
+    if [ -n "$PEAZIP_URL" ]; then
+        wget -qO /tmp/peazip_latest.deb "$PEAZIP_URL"
+        dpkg -i /tmp/peazip_latest.deb || apt-get install -f -y
+        rm -f /tmp/peazip_latest.deb
+    else
+        log "CHYBA: Nepodařilo se získat odkaz na PeaZip z GitHubu."
     fi
 }
 
@@ -826,7 +818,7 @@ lxqt_setup_apps_and_defaults() {
 
 lxqt_config_backup() {
     # --- ZÁLOHA A AUTOMATICKÁ OBNOVA (100% TAR Snapshot) ---
-    log "Vytvářím 1:1 TAR snapshot .config pro absolutní blbuvzdornost..."
+    log "7/7 Vytvářím 1:1 TAR snapshot .config pro případ, že by si uživatel smazal .config z domovského adresáře..."
     
     # 0. Nasazení kanárka (tajný soubor)
     touch "$USER_HOME/.config/lxqt/.debiconf_ok"
@@ -857,13 +849,12 @@ configure_lxqt() {
     log "=== ZAHAJUJI KOMPLEXNÍ KONFIGURACI LXQT ==="
     
     lxqt_prepare_base_configs
-    lxqt_install_theme_and_icons
     lxqt_setup_system_integrations
-    lxqt_setup_wm_and_panel
+    lxqt_setup_appearance
     lxqt_setup_shortcuts_and_menus
+    lxqt_packages_install
     lxqt_setup_apps_and_defaults
     
-    log "7/7: Zabezpečuji vlastnická práva uživatele..."
     chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" || true
 
     lxqt_config_backup
