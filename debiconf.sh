@@ -258,7 +258,7 @@ prepare_system() {
     log "Základní příprava systému a sítě..."
     apt-get update -qq
     # Přidán plymouth a plymouth-themes
-    apt-get install -y sudo curl wget dpkg-dev git dbus-x11 numlockx plymouth plymouth-themes
+    apt-get install -y sudo curl wget dpkg-dev git dbus-x11 numlockx plymouth plymouth-themes udiskie
     
     usermod -aG sudo,audio,video,plugdev "$REAL_USER" || true
 
@@ -424,6 +424,18 @@ setup_auto_updates() {
     else
         log "CHYBA: Zdrojový skript nebyl nalezen v $SRC_SCRIPT!"
     fi
+}
+
+setup_drives_automount() {
+    # Globální Automount daemon (udiskie)
+    local UDISKIE_DESKTOP="$USER_HOME/.config/autostart/udiskie.desktop"
+    mkdir -p "$(dirname "$UDISKIE_DESKTOP")"
+    echo "[Desktop Entry]" > "$UDISKIE_DESKTOP"
+    echo "Type=Application" >> "$UDISKIE_DESKTOP"
+    echo "Name=Udiskie Automount" >> "$UDISKIE_DESKTOP"
+    # Parametr -a (automount), -N (bez otravných notifikací), -t (bez tray ikony)
+    echo "Exec=udiskie -a -N -t" >> "$UDISKIE_DESKTOP"
+    echo "Hidden=false" >> "$UDISKIE_DESKTOP"
 }
 
 # === 3. KONFIGURACE DESKTOPOVÝCH PROSTŘEDÍ ===
@@ -806,6 +818,11 @@ lxqt_setup_apps_and_defaults() {
         sed -i "s|home\\\\david|home\\\\$REAL_USER|g" "$ALBERT_DEST"
     fi
 
+    # ZABITÍ "FIRST RUN" DIALOGU (Podstrčení stavového souboru)
+    local ALBERT_STATE_DIR="$USER_HOME/.local/share/albert"
+    mkdir -p "$ALBERT_STATE_DIR"
+    echo -e "[General]\nlast_used_version=34.0.10" > "$ALBERT_STATE_DIR/state"
+
     # 2. PeaZip
     local PEAZIP_SRC="$CONTENTS_DIR/lxqt/config/peazip.conf"
     local PEAZIP_DEST="$USER_HOME/.config/peazip/conf.txt"
@@ -815,8 +832,27 @@ lxqt_setup_apps_and_defaults() {
         
         # Nahrazení normální cesty
         sed -i "s|/home/david|$USER_HOME|g" "$PEAZIP_DEST"
+        
+        # --- DYNAMICKÉ NASTAVENÍ JAZYKA PEAZIPU ---
+        # Převod systémového kódu na jméno souboru PeaZipu
+        local PEAZIP_LANG=""
+        case "$SYS_LANG_CODE" in
+            cs) PEAZIP_LANG="cz.txt" ;;
+            sk) PEAZIP_LANG="sk.txt" ;;
+            de) PEAZIP_LANG="de.txt" ;;
+            fr) PEAZIP_LANG="fr.txt" ;;
+            es) PEAZIP_LANG="es.txt" ;;
+            pl) PEAZIP_LANG="pl.txt" ;;
+            # Angličtina nebo neznámý jazyk necháme prázdné (PeaZip použije defaultní ENG)
+            *) PEAZIP_LANG="" ;;
+        esac
+        
+        # Najde řádek pod [language] a nahradí ho správným jazykem
+        if grep -q "^\[language\]" "$PEAZIP_DEST"; then
+            sed -i "/^\[language\]/{n;s/.*/$PEAZIP_LANG/}" "$PEAZIP_DEST"
+        fi
+        # ------------------------------------------
     fi
-    # -----------------------------------------------------
 }
 
 lxqt_config_backup() {
@@ -1070,7 +1106,7 @@ main() {
     else
         configure_lxqt
     fi
-
+    setup_drives_automount
     setup_display_manager
     setup_boot
     admin_security
