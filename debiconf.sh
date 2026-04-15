@@ -434,7 +434,7 @@ setup_drives_automount() {
     echo "Type=Application" >> "$UDISKIE_DESKTOP"
     echo "Name=Udiskie Automount" >> "$UDISKIE_DESKTOP"
     # Parametr -a (automount), -N (bez otravných notifikací), -t (bez tray ikony)
-    echo "Exec=udiskie -a -N -t" >> "$UDISKIE_DESKTOP"
+    echo "Exec=udiskie -a -N -T" >> "$UDISKIE_DESKTOP"
     echo "Hidden=false" >> "$UDISKIE_DESKTOP"
 }
 
