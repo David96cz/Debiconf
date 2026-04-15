@@ -526,6 +526,9 @@ lxqt_setup_system_integrations() {
     local AUTOSTART_DIR="$USER_HOME/.config/autostart"
     mkdir -p "$AUTOSTART_DIR"
     echo -e "[Desktop Entry]\nHidden=true" > "$AUTOSTART_DIR/nm-applet.desktop"
+
+    echo "fs.inotify.max_user_watches=524288" | sudo tee /etc/sysctl.d/90-albert-inotify.conf
+    sudo sysctl -p /etc/sysctl.d/90-albert-inotify.conf
 }
 
 lxqt_setup_appearance() {
