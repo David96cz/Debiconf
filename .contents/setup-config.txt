@@ -9,3 +9,8 @@ vlc
 zram-tools
 featherpad
 unattended-upgrades
+cups
+system-config-printer
+printer-driver-all
+avahi-daemon
+blueman
