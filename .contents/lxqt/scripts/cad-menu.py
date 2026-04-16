@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import sys
+import os
+import fcntl
 import subprocess
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QDesktopWidget
 from PyQt5.QtCore import Qt
@@ -83,7 +85,7 @@ class CADMenu(QWidget):
     # Vykreslení toho průsvitného tmavého pozadí
     def paintEvent(self, event):
         painter = QPainter(self)
-        # RGB (0,0,0) je černá, 180 je úroveň neprůhlednosti (0-255)
+        # RGB (0,0,0) je černá, 220 je úroveň neprůhlednosti (0-255)
         painter.fillRect(self.rect(), QColor(0, 0, 0, 220))
 
     # Reakce na klávesu Escape (zavře menu)
@@ -93,27 +95,32 @@ class CADMenu(QWidget):
 
     # --- AKCE TLAČÍTEK ---
     def action_lock(self):
-        # Spustí zamykací obrazovku LXQt
         subprocess.Popen(['lxqt-leave', '--lockscreen'])
         self.close()
 
     def action_logout(self):
-        # Otevře dialog pro odhlášení
         subprocess.Popen(['lxqt-leave', '--logout'])
         self.close()
 
     def action_taskmgr(self):
-        # Spustí správce úloh (qps)
         subprocess.Popen(['qps'])
         self.close()
 
 
 if __name__ == '__main__':
+    # 1. Zajištění, že běží jen jedna instance
+    lock_file_path = '/tmp/cad_menu.lock'
+    lock_file = open(lock_file_path, 'w')
+    
+    try:
+        # Fyzicky zamkne soubor. LOCK_NB zajistí, že skript nečeká, ale rovnou vyhodí chybu
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        # Pokud je soubor zamčený (menu už běží), potichu umře
+        sys.exit(0)
+
+    # 2. Spuštění samotné aplikace
     app = QApplication(sys.argv)
-    
-    # Detekce běžící instance (aby uživatel nemohl vyvolat 5 menu přes sebe)
-    # Tohle se dá případně řešit přes bash wrapper, ale pro teď to necháme jednoduché
-    
     menu = CADMenu()
     menu.show()
     sys.exit(app.exec_())
