@@ -19,17 +19,14 @@ class PasswordChanger(QWidget):
         layout = QVBoxLayout()
         form_layout = QFormLayout()
         
-        # 1. Stávající heslo
         self.old_pass = QLineEdit()
         self.old_pass.setEchoMode(QLineEdit.Password)
         self.old_pass.setPlaceholderText("Pokud heslo není nastaveno, nechte prázdné")
         
-        # 2. Nové heslo
         self.new_pass = QLineEdit()
         self.new_pass.setEchoMode(QLineEdit.Password)
         self.new_pass.setPlaceholderText("Nechte prázdné pro zrušení hesla")
         
-        # 3. Potvrzení nového
         self.new_pass_confirm = QLineEdit()
         self.new_pass_confirm.setEchoMode(QLineEdit.Password)
 
@@ -49,36 +46,24 @@ class PasswordChanger(QWidget):
         self.setLayout(layout)
 
     def verify_current_password(self, old_p):
-        """Tiše ověří, jestli je zadané staré heslo správné."""
         try:
-            # Zavoláme standardní passwd v angličtině
             child = pexpect.spawn('env LANG=C passwd')
-            
-            # Zjistíme, na co se systém zeptá (pokud uživatel nemá heslo, přeskočí to rovnou na New password)
             idx = child.expect(['Current password:', 'New password:', pexpect.EOF], timeout=3)
             
             if idx == 0:
-                # Systém chce staré heslo
                 if not old_p:
                     child.close()
-                    return False # Bylo potřeba heslo, ale uživatel zadal prázdné
-                
+                    return False
                 child.sendline(old_p)
                 idx2 = child.expect(['New password:', 'Authentication token manipulation error', 'incorrect password', 'Authentication failure', pexpect.EOF], timeout=3)
                 child.close()
-                
-                # Pokud po zadání starého hesla následuje dotaz na nové, staré bylo SPRÁVNĚ
                 return idx2 == 0 
-                
             elif idx == 1:
-                # Systém rovnou chce nové heslo (uživatel momentálně ŽÁDNÉ heslo NEMÁ)
                 child.close()
-                return old_p == "" # Vrátí True, jen pokud uživatel správně nechal políčko prázdné
-                
+                return old_p == ""
             else:
                 child.close()
                 return False
-                
         except pexpect.ExceptionPexpect:
             return False
 
@@ -88,17 +73,14 @@ class PasswordChanger(QWidget):
         conf_p = self.new_pass_confirm.text()
         user = os.getlogin()
 
-        # 1. Kontrola shody nových hesel
         if new_p != conf_p:
             QMessageBox.warning(self, "Chyba", "Nová hesla se neshodují!")
             return
 
-        # 2. Ověření stávajícího hesla (Kritická bezpečnostní oprava)
         if not self.verify_current_password(old_p):
             QMessageBox.critical(self, "Chyba ověření", "Stávající heslo je nesprávné.")
             return
 
-        # 3. Logika pro nastavení PRÁZDNÉHO hesla
         if not new_p:
             reply = QMessageBox.question(self, 'Varování', 
                 "Opravdu chcete ZRUŠIT heslo? Počítač bude nezabezpečený a při přihlášení či instalaci programů nebudete zadávat heslo.",
@@ -112,11 +94,9 @@ class PasswordChanger(QWidget):
                 except:
                     QMessageBox.critical(self, "Chyba", "Nepodařilo se smazat heslo.")
             return
-
-        # 4. Logika pro JEDNODUCHÉ heslo (obejití linuxové buzerace přes sudo)
         try:
-            process = subprocess.Popen(['sudo', 'passwd', user], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            process.communicate(input=f"{new_p}\n{new_p}\n")
+            process = subprocess.Popen(['sudo', 'chpasswd'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            process.communicate(input=f"{user}:{new_p}\n")
             
             if process.returncode == 0:
                 QMessageBox.information(self, "Úspěch", "Vaše nové heslo bylo úspěšně nastaveno.")
