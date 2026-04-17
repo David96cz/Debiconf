@@ -710,25 +710,50 @@ lxqt_setup_shortcuts_and_menus() {
         done < "$CONTEXT_CONF"
     fi
 
-    # Zástupci z actions.conf
+    # Zástupci z actions.conf - OPRAVENÁ VERZE (Bez custom_shortcut sraček)
     local LOCAL_APPS_DIR="$USER_HOME/.local/share/applications"
     mkdir -p "$LOCAL_APPS_DIR"
     local SRC_ACTIONS="$CONTENTS_DIR/lxqt/config/actions.conf"
+    
     if [ -f "$SRC_ACTIONS" ]; then
-        local COUNT=0
-        local CURRENT_FILE=""
+        local BLOCK=""
+        local APP_NAME=""
+        
+        # Načítáme soubor a rozdělujeme ho na bloky podle [Desktop Entry]
         while IFS= read -r line || [ -n "$line" ]; do
             trimmed=$(echo "$line" | xargs)
-            if [ "$trimmed" = "[Desktop Entry]" ]; then
-                COUNT=$((COUNT + 1))
-                CURRENT_FILE="$LOCAL_APPS_DIR/custom_shortcut_${COUNT}.desktop"
-                echo "[Desktop Entry]" > "$CURRENT_FILE"
-                chmod +x "$CURRENT_FILE"
-            elif [ -n "$CURRENT_FILE" ] && [ -n "$trimmed" ]; then
-                processed_line="${line//~\/.local/$USER_HOME\/.local}"
-                echo "$processed_line" >> "$CURRENT_FILE"
+            
+            if [[ "$trimmed" == "[Desktop Entry]" ]]; then
+                # Pokud už máme v paměti předchozí blok, uložíme ho
+                if [ -n "$BLOCK" ]; then
+                    # Vytvoření bezpečného jména souboru z APP_NAME
+                    local SAFE_FILENAME=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | sed -e 's/ /-/g' -e 's/[^a-z0-9-]//g')
+                    [ -z "$SAFE_FILENAME" ] && SAFE_FILENAME="unknown-app-$(date +%s%N)"
+                    
+                    echo -e "$BLOCK" > "$LOCAL_APPS_DIR/${SAFE_FILENAME}.desktop"
+                    chmod +x "$LOCAL_APPS_DIR/${SAFE_FILENAME}.desktop"
+                fi
+                # Resetujeme buffer pro nový blok
+                BLOCK="[Desktop Entry]"
+                APP_NAME=""
+            elif [ -n "$BLOCK" ] && [ -n "$trimmed" ]; then
+                # Zpracování řádků uvnitř bloku
+                local processed_line="${line//~\/.local/$USER_HOME\/.local}"
+                BLOCK="${BLOCK}\n${processed_line}"
+                
+                # Pokud narazíme na Name, uložíme si ho pro název souboru
+                if [[ "$processed_line" == Name=* ]]; then
+                    APP_NAME="${processed_line#Name=}"
+                fi
             fi
         done < "$SRC_ACTIONS"
+        
+        # Nezapomenout uložit úplně poslední blok ze souboru
+        if [ -n "$BLOCK" ]; then
+            local SAFE_FILENAME=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | sed -e 's/ /-/g' -e 's/[^a-z0-9-]//g')
+            echo -e "$BLOCK" > "$LOCAL_APPS_DIR/${SAFE_FILENAME}.desktop"
+            chmod +x "$LOCAL_APPS_DIR/${SAFE_FILENAME}.desktop"
+        fi
     fi
 }
 

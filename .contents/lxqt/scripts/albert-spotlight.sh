@@ -5,8 +5,8 @@ MNT_DIR="/mnt"
 mkdir -p "$MEDIA_DIR" "$MNT_DIR"
 
 while true; do
-    # Inotify dál hlídá celý disk
-    inotifywait -r -e create -e moved_to --exclude '/\.' "$HOME" "$MEDIA_DIR" "$MNT_DIR" 2>/dev/null
+    # Inotify dál hlídá celý disk, ale NEPRŮSTŘELNĚ ignoruje všechny skryté složky a soubory
+    inotifywait -r -e create -e moved_to --exclude '.*/\..*' "$HOME" "$MEDIA_DIR" "$MNT_DIR" 2>/dev/null
     
     sleep 1
     
