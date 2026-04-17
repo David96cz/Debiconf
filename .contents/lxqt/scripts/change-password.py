@@ -22,7 +22,7 @@ class PasswordChanger(QWidget):
         
         self.old_pass = QLineEdit()
         self.old_pass.setEchoMode(QLineEdit.Password)
-        self.old_pass.setPlaceholderText("Pokud heslo není nastaveno, nechte prázdné")
+        self.old_pass.setPlaceholderText("Prázdné, pokud heslo není nastaveno...")
         
         self.new_pass = QLineEdit()
         self.new_pass.setEchoMode(QLineEdit.Password)
