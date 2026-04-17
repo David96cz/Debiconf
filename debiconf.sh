@@ -1222,7 +1222,6 @@ main() {
     else
         configure_lxqt
     fi
-    setup_drives_automount
     setup_display_manager
     setup_boot
     admin_security
