@@ -30,6 +30,198 @@ init_script() {
     SYS_ARCH=$(dpkg --print-architecture)
 }
 
+init_setup() {
+    [ "$EUID" -ne 0 ] && error "Nutno spustit jako root (sudo)"
+    
+    log "Detekován systémový jazyk instalace: $SYS_LANG_CODE"
+    log "Instalace bude provedena pro uživatele: $REAL_USER"
+    sleep 1
+
+    # HLAVNÍ INTERAKTIVNÍ SMYČKA
+    while true; do
+        clear
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo -e "\033[1;36m                 DEBIAN SETUP                     \033[0m"
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo -e " \033[1;33m(Kdykoliv zadej 'R' pro reset a návrat na začátek)\033[0m"
+        echo -e "\033[1;36m--------------------------------------------------\033[0m"
+        echo ""
+
+        echo "1. Vyber desktopové prostředí"
+        while true; do
+            echo "1) KDE Plasma"
+            echo "2) LXQT"
+            read -p "Zadej číslo (1 nebo 2): " DISTRO_ANS
+            case "$DISTRO_ANS" in
+                1) DESKTOP_ENV="PLASMA"; DESKTOP_STR="KDE Plasma"; break ;;
+                2) DESKTOP_ENV="LXQT"; DESKTOP_STR="LXQt"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
+        echo "--------------------------------------------------"
+        echo "2. Vyber prohlížeč"
+        while true; do
+            echo "1) Chrome"
+            echo "2) Chromium"
+            echo "3) Brave"
+            echo "4) Firefox"
+            echo "5) Nic"
+            read -p "Zadej číslo (1 až 5): " BROWSER_CHOICE
+            case "$BROWSER_CHOICE" in
+                1) BROWSER_STR="Google Chrome"; break ;;
+                2) BROWSER_STR="Chromium"; break ;;
+                3) BROWSER_STR="Brave"; break ;;
+                4) BROWSER_STR="Firefox"; break ;;
+                5) BROWSER_STR="Žádný"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej číslo 1 až 5 nebo R.\033[0m" ;;
+            esac
+        done
+
+        echo "--------------------------------------------------"
+        echo "3. Vyber kancelářský balík"
+        while true; do
+            echo "1) LibreOffice"
+            echo "2) OnlyOffice"
+            echo "3) Nic"
+            read -p "Zadej číslo (1 až 3): " OFFICE_CHOICE
+            case "$OFFICE_CHOICE" in
+                1) OFFICE_STR="LibreOffice"; break ;;
+                2) OFFICE_STR="OnlyOffice"; break ;;
+                3) OFFICE_STR="Žádný"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej číslo 1 až 3 nebo R.\033[0m" ;;
+            esac
+        done
+
+        echo "--------------------------------------------------"
+        echo "4. Chceš nastavit automatické přihlašování?"
+        while true; do
+            echo "1) Ano"
+            echo "2) Ne"
+            read -p "Zadej číslo (1 nebo 2): " AUTO_ANS
+            case "$AUTO_ANS" in
+                1) AUTOLOGIN_REQ="TRUE"; AUTOLOGIN_STR="Ano"; break ;;
+                2) AUTOLOGIN_REQ="FALSE"; AUTOLOGIN_STR="Ne"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
+        echo "--------------------------------------------------"
+        echo "5. Vyžadovat pro sudo výhradně jen heslo ROOT? (Místo uživatelského hesla nastavené při instalaci bude pro administraci vyžadováno heslo ROOT)"
+        while true; do
+            echo "1) Ano (Sudo bude chtít ROOT heslo)"
+            echo "2) Ne (Ponechat pro sudo klasické heslo uživatele)"
+            read -p "Zadej číslo (1 nebo 2): " ROOT_ANS
+            case "$ROOT_ANS" in
+                1) 
+                    ROOT_ADMIN_ONLY="TRUE"
+                    ROOT_STR="Ano (Sudo na root heslo)"
+                    break 
+                    ;;
+                2) 
+                    ROOT_ADMIN_ONLY="FALSE"
+                    ROOT_STR="Ne (Sudo na uživatele)"
+                    # Rovnou natvrdo zakážeme smazání hesla, jinak by měl sudo bez hesla
+                    REMOVE_PASS="FALSE" 
+                    REMOVE_PASS_STR="Ne (Nutné pro sudo)"
+                    break 
+                    ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
+        # Zeptáme se na smazání hesla JEN pokud je sudo kryté rootem
+        if [ "$ROOT_ADMIN_ONLY" == "TRUE" ]; then
+            echo "--------------------------------------------------"
+            echo "5b. Odstranit uživateli heslo pro přihlášení? (Windows styl - přihlášení jen kliknutím. Bezpečné, protože sudo už je chráněno ROOT heslem.)"
+            while true; do
+                echo "1) Ano (Vymazat heslo běžného uživatele)"
+                echo "2) Ne (Ponechat uživateli heslo)"
+                read -p "Zadej číslo (1 nebo 2): " PASS_ANS
+                case "$PASS_ANS" in
+                    1) REMOVE_PASS="TRUE"; REMOVE_PASS_STR="Ano (Bez hesla)"; break ;;
+                    2) REMOVE_PASS="FALSE"; REMOVE_PASS_STR="Ne (S heslem)"; break ;;
+                    r|R) continue 2 ;;
+                    *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+                esac
+            done
+        fi
+
+        echo "--------------------------------------------------"
+        echo "6. Chceš nainstalovat Wine a Winetricks pro Windows aplikace?"
+        while true; do
+            echo "1) Ano"
+            echo "2) Ne"
+            read -p "Zadej číslo (1 nebo 2): " WINE_ANS
+            case "$WINE_ANS" in
+                1) WINE_REQ="TRUE"; WINE_STR="Ano"; break ;;
+                2) WINE_REQ="FALSE"; WINE_STR="Ne"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
+        echo "--------------------------------------------------"
+        echo "7. Instalace RustDesk (Vzdálená plocha)?"
+        echo "   Umožňuje ovládat tento počítač z jiného zařízení nebo naopak."
+        echo "   Ideální pro rychlou technickou pomoc nebo správu na dálku."
+        while true; do
+            echo "1) Ano (Nainstalovat RustDesk)"
+            echo "2) Ne (Přeskočit)"
+            read -p "Zadej číslo (1 nebo 2): " RUSTDESK_ANS
+            case "$RUSTDESK_ANS" in
+                1) RUSTDESK_REQ="TRUE"; RUSTDESK_STR="Ano"; break ;;
+                2) RUSTDESK_REQ="FALSE"; RUSTDESK_STR="Ne"; break ;;
+                r|R) continue 2 ;;
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+
+        # SOUHRN A POTVRZENÍ
+        clear
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo -e "\033[1;36m                 SOUHRN NASTAVENÍ                 \033[0m"
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo " Cílový uživatel:  $REAL_USER"
+        echo " Prostředí:        $DESKTOP_STR"
+        echo " Prohlížeč:        $BROWSER_STR"
+        echo " Office:           $OFFICE_STR"
+        echo " Autologin:        $AUTOLOGIN_STR"
+        echo " Zámek Sudo:       $ROOT_STR"
+        echo " Wine podpora:     $WINE_STR"
+        echo " RustDesk:         $RUSTDESK_STR"
+        echo -e "\033[1;36m==================================================\033[0m"
+        echo "Je toto nastavení správné?"
+        while true; do
+            echo "1) Ano (Spustit instalaci)"
+            echo "2) Ne (Začít znovu)"
+            read -p "Zadej číslo (1 nebo 2, případně R pro restart): " CONFIRM_ANS
+            case "$CONFIRM_ANS" in
+                1) break 2 ;; 
+                2|r|R) continue 2 ;; 
+                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
+            esac
+        done
+    done
+
+    # Definice lokálního konfiguráku
+    LOCAL_CONFIG="$CONTENTS_DIR/$(echo "$DESKTOP_ENV" | tr '[:upper:]' '[:lower:]')/config.txt"
+
+    # Načtení zbytku globálních nastavení
+    TIMEOUT=$(get_setting "GRUB_TIMEOUT")
+    TIMEOUT=${TIMEOUT:-0}
+    
+    CONF_OUT_RAW=$(get_setting "CONFIRM_LOGOUT" | tr '[:lower:]' '[:upper:]')
+    [[ "$CONF_OUT_RAW" == "TRUE" ]] && CONF_OUT="true" || CONF_OUT="false"
+    
+    BOOT_LOGO=$(get_setting "BOOT_LOGO" | tr '[:lower:]' '[:upper:]')
+}
+
 # === POMOCNÉ FUNKCE ===
 
 log() {
