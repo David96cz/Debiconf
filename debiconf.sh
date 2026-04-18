@@ -527,9 +527,7 @@ lxqt_setup_system_integrations() {
 
     # Passwd manažer
     echo "$USER ALL=(ALL) NOPASSWD: /usr/bin/passwd, /usr/sbin/chpasswd, /bin/rm, /bin/mkdir, /bin/bash" | sudo tee /etc/sudoers.d/99-gui-pass-manager
-    sudo chmod 0440 /etc/sudoers.d/99-gui-pass-manager 
-
-    chown "$REAL_USER:$REAL_USER" "$PCMANFM_CONF"
+    sudo chmod 0440 /etc/sudoers.d/99-gui-pass-manager
 }
 
 lxqt_setup_appearance() {
