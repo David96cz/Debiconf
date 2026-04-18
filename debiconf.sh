@@ -538,9 +538,11 @@ install_packages() {
             su - "$REAL_USER" -c "WINEDLLOVERRIDES=mscoree,mshtml= wineboot -u" || true
 
             # --- WINE DYNAMICKÁ EMULACE OBRAZOVKY ---
-            # Připravíme skript, který poběží při startu a přizpůsobí Wine aktuálnímu monitoru
             log "Nasazuji dynamickou synchronizaci virtuální plochy Wine..."
             local WINE_SYNC_BIN="$USER_HOME/.local/bin/wine-screensync.sh"
+            
+            # FIX: Jistota, že složka existuje, než do ní začneme zapisovat
+            mkdir -p "$USER_HOME/.local/bin"
             
             echo '#!/bin/bash' > "$WINE_SYNC_BIN"
             echo "NATIVE_RES=\$(xrandr | grep '\*' | awk '{print \$1}' | head -n 1)" >> "$WINE_SYNC_BIN"
@@ -555,6 +557,10 @@ install_packages() {
             chmod +x "$WINE_SYNC_BIN"
             
             local WINE_SYNC_DESKTOP="$AUTOSTART_DIR/wine-screensync.desktop"
+            
+            # FIX 2: Jistota, že existuje i složka autostart
+            mkdir -p "$AUTOSTART_DIR"
+            
             echo "[Desktop Entry]" > "$WINE_SYNC_DESKTOP"
             echo "Type=Application" >> "$WINE_SYNC_DESKTOP"
             echo "Name=Wine Screen Sync" >> "$WINE_SYNC_DESKTOP"
