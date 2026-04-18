@@ -539,10 +539,18 @@ install_packages() {
 
             # --- WINE DYNAMICKÁ EMULACE OBRAZOVKY ---
             log "Nasazuji dynamickou synchronizaci virtuální plochy Wine..."
-            local WINE_SYNC_BIN="$USER_HOME/.local/bin/wine-screensync.sh"
             
-            # FIX: Jistota, že složka existuje, než do ní začneme zapisovat
-            mkdir -p "$USER_HOME/.local/bin"
+            # ZÁCHRANA PROMĚNNÉ: Pokud v USER_HOME chybí úvodní lomítko, doplníme ho
+            if [[ "$USER_HOME" != /* ]]; then
+                USER_HOME="/$USER_HOME"
+            fi
+            
+            local WINE_SYNC_BIN="$USER_HOME/.local/bin/wine-screensync.sh"
+            local AUTOSTART_DIR="$USER_HOME/.config/autostart"
+
+            # FIX: Jistota, že složky reálně existují, jinak do nich echo nesmí zapisovat
+            mkdir -p "$USER_HOME/.local/bin" || true
+            mkdir -p "$AUTOSTART_DIR" || true
             
             echo '#!/bin/bash' > "$WINE_SYNC_BIN"
             echo "NATIVE_RES=\$(xrandr | grep '\*' | awk '{print \$1}' | head -n 1)" >> "$WINE_SYNC_BIN"
@@ -557,10 +565,6 @@ install_packages() {
             chmod +x "$WINE_SYNC_BIN"
             
             local WINE_SYNC_DESKTOP="$AUTOSTART_DIR/wine-screensync.desktop"
-            
-            # FIX 2: Jistota, že existuje i složka autostart
-            mkdir -p "$AUTOSTART_DIR"
-            
             echo "[Desktop Entry]" > "$WINE_SYNC_DESKTOP"
             echo "Type=Application" >> "$WINE_SYNC_DESKTOP"
             echo "Name=Wine Screen Sync" >> "$WINE_SYNC_DESKTOP"
