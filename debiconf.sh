@@ -62,196 +62,168 @@ get_section() {
 
 # === 1. PŘÍPRAVA A INTERAKTIVNÍ DOTAZY ===
 
-init_setup() {
-    [ "$EUID" -ne 0 ] && error "Nutno spustit jako root (sudo)"
+lxqt_setup_apps_and_defaults() {
+    log "6/7: Nastavuji chování aplikací, MIME typy, Prohlížeč a Autostart..."
     
-    log "Detekován systémový jazyk instalace: $SYS_LANG_CODE"
-    log "Instalace bude provedena pro uživatele: $REAL_USER"
-    sleep 1
-
-    # HLAVNÍ INTERAKTIVNÍ SMYČKA
-    while true; do
-        clear
-        echo -e "\033[1;36m==================================================\033[0m"
-        echo -e "\033[1;36m                 DEBIAN SETUP                     \033[0m"
-        echo -e "\033[1;36m==================================================\033[0m"
-        echo -e " \033[1;33m(Kdykoliv zadej 'R' pro reset a návrat na začátek)\033[0m"
-        echo -e "\033[1;36m--------------------------------------------------\033[0m"
-        echo ""
-
-        echo "1. Vyber desktopové prostředí"
-        while true; do
-            echo "1) KDE Plasma"
-            echo "2) LXQT"
-            read -p "Zadej číslo (1 nebo 2): " DISTRO_ANS
-            case "$DISTRO_ANS" in
-                1) DESKTOP_ENV="PLASMA"; DESKTOP_STR="KDE Plasma"; break ;;
-                2) DESKTOP_ENV="LXQT"; DESKTOP_STR="LXQt"; break ;;
-                r|R) continue 2 ;;
-                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
-            esac
-        done
-
-        echo "--------------------------------------------------"
-        echo "2. Vyber prohlížeč"
-        while true; do
-            echo "1) Chrome"
-            echo "2) Chromium"
-            echo "3) Brave"
-            echo "4) Firefox"
-            echo "5) Nic"
-            read -p "Zadej číslo (1 až 5): " BROWSER_CHOICE
-            case "$BROWSER_CHOICE" in
-                1) BROWSER_STR="Google Chrome"; break ;;
-                2) BROWSER_STR="Chromium"; break ;;
-                3) BROWSER_STR="Brave"; break ;;
-                4) BROWSER_STR="Firefox"; break ;;
-                5) BROWSER_STR="Žádný"; break ;;
-                r|R) continue 2 ;;
-                *) echo -e "\033[1;31mNeplatná volba! Zadej číslo 1 až 5 nebo R.\033[0m" ;;
-            esac
-        done
-
-        echo "--------------------------------------------------"
-        echo "3. Vyber kancelářský balík"
-        while true; do
-            echo "1) LibreOffice"
-            echo "2) OnlyOffice"
-            echo "3) Nic"
-            read -p "Zadej číslo (1 až 3): " OFFICE_CHOICE
-            case "$OFFICE_CHOICE" in
-                1) OFFICE_STR="LibreOffice"; break ;;
-                2) OFFICE_STR="OnlyOffice"; break ;;
-                3) OFFICE_STR="Žádný"; break ;;
-                r|R) continue 2 ;;
-                *) echo -e "\033[1;31mNeplatná volba! Zadej číslo 1 až 3 nebo R.\033[0m" ;;
-            esac
-        done
-
-        echo "--------------------------------------------------"
-        echo "4. Chceš nastavit automatické přihlašování?"
-        while true; do
-            echo "1) Ano"
-            echo "2) Ne"
-            read -p "Zadej číslo (1 nebo 2): " AUTO_ANS
-            case "$AUTO_ANS" in
-                1) AUTOLOGIN_REQ="TRUE"; AUTOLOGIN_STR="Ano"; break ;;
-                2) AUTOLOGIN_REQ="FALSE"; AUTOLOGIN_STR="Ne"; break ;;
-                r|R) continue 2 ;;
-                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
-            esac
-        done
-
-        echo "--------------------------------------------------"
-        echo "5. Vyžadovat pro sudo výhradně jen heslo ROOT? (Místo uživatelského hesla nastavené při instalaci bude pro administraci vyžadováno heslo ROOT)"
-        while true; do
-            echo "1) Ano (Sudo bude chtít ROOT heslo)"
-            echo "2) Ne (Ponechat pro sudo klasické heslo uživatele)"
-            read -p "Zadej číslo (1 nebo 2): " ROOT_ANS
-            case "$ROOT_ANS" in
-                1) 
-                    ROOT_ADMIN_ONLY="TRUE"
-                    ROOT_STR="Ano (Sudo na root heslo)"
-                    break 
-                    ;;
-                2) 
-                    ROOT_ADMIN_ONLY="FALSE"
-                    ROOT_STR="Ne (Sudo na uživatele)"
-                    # Rovnou natvrdo zakážeme smazání hesla, jinak by měl sudo bez hesla
-                    REMOVE_PASS="FALSE" 
-                    REMOVE_PASS_STR="Ne (Nutné pro sudo)"
-                    break 
-                    ;;
-                r|R) continue 2 ;;
-                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
-            esac
-        done
-
-        # Zeptáme se na smazání hesla JEN pokud je sudo kryté rootem
-        if [ "$ROOT_ADMIN_ONLY" == "TRUE" ]; then
-            echo "--------------------------------------------------"
-            echo "5b. Odstranit uživateli heslo pro přihlášení? (Windows styl - přihlášení jen kliknutím. Bezpečné, protože sudo už je chráněno ROOT heslem.)"
-            while true; do
-                echo "1) Ano (Vymazat heslo běžného uživatele)"
-                echo "2) Ne (Ponechat uživateli heslo)"
-                read -p "Zadej číslo (1 nebo 2): " PASS_ANS
-                case "$PASS_ANS" in
-                    1) REMOVE_PASS="TRUE"; REMOVE_PASS_STR="Ano (Bez hesla)"; break ;;
-                    2) REMOVE_PASS="FALSE"; REMOVE_PASS_STR="Ne (S heslem)"; break ;;
-                    r|R) continue 2 ;;
-                    *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
-                esac
-            done
-        fi
-
-        echo "--------------------------------------------------"
-        echo "6. Chceš nainstalovat Wine a Winetricks pro Windows aplikace?"
-        while true; do
-            echo "1) Ano"
-            echo "2) Ne"
-            read -p "Zadej číslo (1 nebo 2): " WINE_ANS
-            case "$WINE_ANS" in
-                1) WINE_REQ="TRUE"; WINE_STR="Ano"; break ;;
-                2) WINE_REQ="FALSE"; WINE_STR="Ne"; break ;;
-                r|R) continue 2 ;;
-                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
-            esac
-        done
-
-        echo "--------------------------------------------------"
-        echo "7. Instalace RustDesk (Vzdálená plocha)?"
-        echo "   Umožňuje ovládat tento počítač z jiného zařízení nebo naopak."
-        echo "   Ideální pro rychlou technickou pomoc nebo správu na dálku."
-        while true; do
-            echo "1) Ano (Nainstalovat RustDesk)"
-            echo "2) Ne (Přeskočit)"
-            read -p "Zadej číslo (1 nebo 2): " RUSTDESK_ANS
-            case "$RUSTDESK_ANS" in
-                1) RUSTDESK_REQ="TRUE"; RUSTDESK_STR="Ano"; break ;;
-                2) RUSTDESK_REQ="FALSE"; RUSTDESK_STR="Ne"; break ;;
-                r|R) continue 2 ;;
-                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
-            esac
-        done
-
-        # SOUHRN A POTVRZENÍ
-        clear
-        echo -e "\033[1;36m==================================================\033[0m"
-        echo -e "\033[1;36m                 SOUHRN NASTAVENÍ                 \033[0m"
-        echo -e "\033[1;36m==================================================\033[0m"
-        echo " Cílový uživatel:  $REAL_USER"
-        echo " Prostředí:        $DESKTOP_STR"
-        echo " Prohlížeč:        $BROWSER_STR"
-        echo " Office:           $OFFICE_STR"
-        echo " Autologin:        $AUTOLOGIN_STR"
-        echo " Zámek Sudo:       $ROOT_STR"
-        echo " Wine podpora:     $WINE_STR"
-        echo " RustDesk:         $RUSTDESK_STR"
-        echo -e "\033[1;36m==================================================\033[0m"
-        echo "Je toto nastavení správné?"
-        while true; do
-            echo "1) Ano (Spustit instalaci)"
-            echo "2) Ne (Začít znovu)"
-            read -p "Zadej číslo (1 nebo 2, případně R pro restart): " CONFIRM_ANS
-            case "$CONFIRM_ANS" in
-                1) break 2 ;; 
-                2|r|R) continue 2 ;; 
-                *) echo -e "\033[1;31mNeplatná volba! Zadej 1, 2 nebo R.\033[0m" ;;
-            esac
-        done
+    local LOCAL_APPS="$USER_HOME/.local/share/applications"
+    local WRAPPER_BIN="$USER_HOME/.local/bin/busy-launch.py"
+    mkdir -p "$LOCAL_APPS"
+    
+    # Nasazení wrapperů
+    for app in /usr/share/applications/*.desktop; do
+        [ -e "$app" ] || continue
+        app_name=$(basename "$app")
+        cp "$app" "$LOCAL_APPS/" || true
+        sed -i "s|^Exec=|Exec=python3 $WRAPPER_BIN |" "$LOCAL_APPS/$app_name" || true
     done
 
-    # Definice lokálního konfiguráku
-    LOCAL_CONFIG="$CONTENTS_DIR/$(echo "$DESKTOP_ENV" | tr '[:upper:]' '[:lower:]')/config.txt"
+    # Skrytí aplikací
+    local APPS_TO_HIDE_STR=$(get_section "$LOCAL_CONFIG" "APPS_TO_HIDE")
+    read -r -a APPS_TO_HIDE <<< "$APPS_TO_HIDE_STR"
+    for app in "${APPS_TO_HIDE[@]}"; do
+        [ -f "$LOCAL_APPS/$app" ] && sed -i '/^NoDisplay=/d; $ a NoDisplay=true' "$LOCAL_APPS/$app" || true
+    done
 
-    # Načtení zbytku globálních nastavení
-    TIMEOUT=$(get_setting "GRUB_TIMEOUT")
-    TIMEOUT=${TIMEOUT:-0}
+    # --- IDENTIFIKACE A UMLČENÍ ZVOLENÉHO PROHLÍŽEČE ---
+    local BROWSER_DESKTOP=""
+    local BROWSER_BIN=""
+    if [ "$BROWSER_CHOICE" != "5" ] && [ -n "$BROWSER_CHOICE" ]; then
+        case "$BROWSER_CHOICE" in
+            1) BROWSER_DESKTOP="google-chrome.desktop"; BROWSER_BIN="/usr/bin/google-chrome" ;;
+            2) BROWSER_DESKTOP="chromium.desktop"; BROWSER_BIN="/usr/bin/chromium" ;;
+            3) BROWSER_DESKTOP="brave-browser.desktop"; BROWSER_BIN="/usr/bin/brave-browser" ;;
+            4) BROWSER_DESKTOP="firefox-esr.desktop"; [ -x "/usr/bin/firefox" ] && BROWSER_BIN="/usr/bin/firefox" || BROWSER_BIN="/usr/bin/firefox-esr" ;;
+        esac
+
+        log "Nastavuji $BROWSER_DESKTOP jako systémový default a potlačuji hlášky..."
+        
+        # Nastavení XDG z pohledu uživatele (Umlčí hlášky)
+        su - "$REAL_USER" -c "xdg-settings set default-web-browser $BROWSER_DESKTOP 2>/dev/null" || true
+        su - "$REAL_USER" -c "xdg-mime default $BROWSER_DESKTOP x-scheme-handler/http 2>/dev/null" || true
+        su - "$REAL_USER" -c "xdg-mime default $BROWSER_DESKTOP x-scheme-handler/https 2>/dev/null" || true
+
+        # Kladivo přes Debian Alternatives
+        if [ -x "$BROWSER_BIN" ]; then
+            update-alternatives --set x-www-browser "$BROWSER_BIN" 2>/dev/null || true
+            update-alternatives --set gnome-www-browser "$BROWSER_BIN" 2>/dev/null || true
+        fi
+    fi
+
+    # --- MIME Typy ---
+    local MIME_FILE="$USER_HOME/.config/mimeapps.list"
+    [ ! -f "$MIME_FILE" ] && echo "[Added Associations]" > "$MIME_FILE"
+    grep -q "^\[Added Associations\]" "$MIME_FILE" || echo "[Added Associations]" >> "$MIME_FILE"
+
+    set_default_app() {
+        local mime="$1"
+        local app="$2"
+        sed -i "/^${mime//\//\\/}=/d" "$MIME_FILE" 2>/dev/null || true
+        sed -i "/^\[Added Associations\]/a ${mime}=${app};" "$MIME_FILE"
+    }
+
+    local APPS_CONF="$CONTENTS_DIR/lxqt/config/defaultapps.conf"
     
-    CONF_OUT_RAW=$(get_setting "CONFIRM_LOGOUT" | tr '[:lower:]' '[:upper:]')
-    [[ "$CONF_OUT_RAW" == "TRUE" ]] && CONF_OUT="true" || CONF_OUT="false"
+    if [ -f "$APPS_CONF" ]; then
+        log "Načítám výchozí aplikace z defaultapps.conf..."
+        local CURRENT_APP=""
+        
+        while IFS= read -r line || [ -n "$line" ]; do
+            line=$(echo "$line" | xargs)
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            
+            if [[ "$line" =~ ^\[(.*)\]$ ]]; then
+                CURRENT_APP="${BASH_REMATCH[1]}"
+                
+                # INTELIGENCE: Přeskočíme odmítnuté aplikace a cizí prohlížeče
+                if [ "$CURRENT_APP" == "wine.desktop" ] && [ "$WINE_REQ" != "TRUE" ]; then
+                    CURRENT_APP="SKIP"
+                elif [[ "$CURRENT_APP" == *"libreoffice"* ]] && [ "$OFFICE_CHOICE" != "1" ]; then
+                    CURRENT_APP="SKIP"
+                elif [[ "$CURRENT_APP" == *"onlyoffice"* ]] && [ "$OFFICE_CHOICE" != "2" ]; then
+                    CURRENT_APP="SKIP"
+                elif [[ "$CURRENT_APP" =~ (google-chrome|chromium|brave-browser|firefox) ]]; then
+                    # Pokud se prohlížeč neshoduje s tím zvoleným, vyřadíme jeho asociace
+                    if [ "$CURRENT_APP" != "$BROWSER_DESKTOP" ]; then
+                        CURRENT_APP="SKIP"
+                    fi
+                fi
+                
+            elif [ "$CURRENT_APP" != "SKIP" ] && [ -n "$CURRENT_APP" ]; then
+                set_default_app "$line" "$CURRENT_APP"
+            fi
+        done < "$APPS_CONF"
+    fi
+
+    # Autostart
+    local AUTOSTART_DIR="$USER_HOME/.config/autostart"
+    mkdir -p "$AUTOSTART_DIR"
+    AUTORUN_APPS=$(awk '/^\[AUTORUN\]/{flag=1; next} /^\[/{flag=0} flag && NF' "$CONTENTS_DIR/lxqt/config.txt")
+
+    if [ -n "$AUTORUN_APPS" ]; then
+        for APP in $AUTORUN_APPS; do
+            local DEST_DESKTOP="$AUTOSTART_DIR/${APP}-autostart.desktop"
+            local EXEC_CMD="$APP"
+            
+            if [[ "$APP" == *.sh || "$APP" == *.py ]]; then
+                EXEC_CMD="$USER_HOME/.local/bin/$APP"
+            fi
+            
+            echo "[Desktop Entry]" > "$DEST_DESKTOP"
+            echo "Type=Application" >> "$DEST_DESKTOP"
+            echo "Name=Autostart $APP" >> "$DEST_DESKTOP"
+            echo "Exec=$EXEC_CMD" >> "$DEST_DESKTOP"
+            echo "Hidden=false" >> "$DEST_DESKTOP"
+            echo "NoDisplay=false" >> "$DEST_DESKTOP"
+            echo "X-GNOME-Autostart-enabled=true" >> "$DEST_DESKTOP"
+        done
+    fi
+
+    # --- KONFIGURACE ALBERT A PEAZIP ---
+    log "Nasazuji konfigurace pro Albert a PeaZip..."
     
-    BOOT_LOGO=$(get_setting "BOOT_LOGO" | tr '[:lower:]' '[:upper:]')
+    local ALBERT_SRC="$CONTENTS_DIR/lxqt/config/albert.conf"
+    local ALBERT_DEST="$USER_HOME/.config/albert/config"
+    if [ -f "$ALBERT_SRC" ]; then
+        mkdir -p "$(dirname "$ALBERT_DEST")"
+        cp "$ALBERT_SRC" "$ALBERT_DEST"
+        sed -i "s|/home/david|$USER_HOME|g" "$ALBERT_DEST"
+        sed -i "s|home\\\\david|home\\\\$REAL_USER|g" "$ALBERT_DEST"
+    fi
+
+    local ALBERT_DISKS="$USER_HOME/.local/share/albert_disks"
+    mkdir -p "$ALBERT_DISKS"
+    ln -sfn /media "$ALBERT_DISKS/media"
+    ln -sfn /mnt "$ALBERT_DISKS/mnt"
+
+    local ALBERT_STATE_DIR="$USER_HOME/.local/share/albert"
+    mkdir -p "$ALBERT_STATE_DIR"
+    echo -e "[General]\nlast_used_version=34.0.10" > "$ALBERT_STATE_DIR/state"
+
+    local PEAZIP_SRC="$CONTENTS_DIR/lxqt/config/peazip.conf"
+    local PEAZIP_DEST="$USER_HOME/.config/peazip/conf.txt"
+    if [ -f "$PEAZIP_SRC" ]; then
+        mkdir -p "$(dirname "$PEAZIP_DEST")"
+        cp "$PEAZIP_SRC" "$PEAZIP_DEST"
+        sed -i "s|/home/david|$USER_HOME|g" "$PEAZIP_DEST"
+        
+        local PEAZIP_LANG=""
+        case "$SYS_LANG_CODE" in
+            cs) PEAZIP_LANG="cz.txt" ;;
+            sk) PEAZIP_LANG="sk.txt" ;;
+            de) PEAZIP_LANG="de.txt" ;;
+            fr) PEAZIP_LANG="fr.txt" ;;
+            es) PEAZIP_LANG="es.txt" ;;
+            pl) PEAZIP_LANG="pl.txt" ;;
+            *) PEAZIP_LANG="" ;;
+        esac
+        
+        if grep -q "^\[language\]" "$PEAZIP_DEST"; then
+            sed -i "/^\[language\]/{n;s/.*/$PEAZIP_LANG/}" "$PEAZIP_DEST"
+        fi
+    fi
+
+    # Ošetření práv na závěr, aby vše v konfiguračních složkách patřilo tetě
+    chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" 2>/dev/null || true
 }
 
 prepare_system() {
@@ -372,6 +344,32 @@ install_packages() {
             # PŘIDÁNO: Tichá inicializace Wine profilu na pozadí bez vyskakovacích oken
             log "Inicializuji Wine profil potichu, aby neotravoval uživatele..."
             su - "$REAL_USER" -c "WINEDLLOVERRIDES=mscoree,mshtml= wineboot -u" || true
+
+            # --- WINE DYNAMICKÁ EMULACE OBRAZOVKY ---
+            # Připravíme skript, který poběží při startu a přizpůsobí Wine aktuálnímu monitoru
+            log "Nasazuji dynamickou synchronizaci virtuální plochy Wine..."
+            local WINE_SYNC_BIN="$USER_HOME/.local/bin/wine-screensync.sh"
+            
+            echo '#!/bin/bash' > "$WINE_SYNC_BIN"
+            echo "NATIVE_RES=\$(xrandr | grep '\*' | awk '{print \$1}' | head -n 1)" >> "$WINE_SYNC_BIN"
+            echo '[ -z "$NATIVE_RES" ] && NATIVE_RES="1920x1080"' >> "$WINE_SYNC_BIN"
+            echo '' >> "$WINE_SYNC_BIN"
+            echo '# Nastaví registry jen pokud adresář .wine už existuje' >> "$WINE_SYNC_BIN"
+            echo 'if [ -d "$HOME/.wine" ]; then' >> "$WINE_SYNC_BIN"
+            echo '    wine reg add "HKCU\Software\Wine\Explorer" /v "Desktop" /t REG_SZ /d "Default" /f >/dev/null 2>&1' >> "$WINE_SYNC_BIN"
+            echo '    wine reg add "HKCU\Software\Wine\Explorer\Desktops" /v "Default" /t REG_SZ /d "$NATIVE_RES" /f >/dev/null 2>&1' >> "$WINE_SYNC_BIN"
+            echo 'fi' >> "$WINE_SYNC_BIN"
+
+            chmod +x "$WINE_SYNC_BIN"
+            
+            local WINE_SYNC_DESKTOP="$AUTOSTART_DIR/wine-screensync.desktop"
+            echo "[Desktop Entry]" > "$WINE_SYNC_DESKTOP"
+            echo "Type=Application" >> "$WINE_SYNC_DESKTOP"
+            echo "Name=Wine Screen Sync" >> "$WINE_SYNC_DESKTOP"
+            echo "Exec=$WINE_SYNC_BIN" >> "$WINE_SYNC_DESKTOP"
+            echo "Hidden=false" >> "$WINE_SYNC_DESKTOP"
+            echo "NoDisplay=true" >> "$WINE_SYNC_DESKTOP"
+            echo "X-GNOME-Autostart-enabled=true" >> "$WINE_SYNC_DESKTOP"
         fi
     fi
     # ---------------------------------------------------------
