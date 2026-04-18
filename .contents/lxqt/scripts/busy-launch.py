@@ -70,8 +70,14 @@ def main():
         initial_count = get_window_count()
         initial_active = get_active_window()
 
-        # --- 3. GRAB POINTER (BLOKUJÍCÍ) ---
-        x11.XGrabPointer(display, root, True, 0, 1, 1, 0, cursor, 0)
+        # --- 3. GRAB POINTER (BLOKUJÍCÍ S OPAKOVÁNÍM PROTI DVOJKLIKU) ---
+        # 0 znamená GrabSuccess. Pokud to X11 zamítne kvůli doubleclicku, zkusíme to znova.
+        for _ in range(20):
+            result = x11.XGrabPointer(display, root, True, 0, 1, 1, 0, cursor, 0)
+            if result == 0:
+                break
+            time.sleep(0.05)
+            
         x11.XFlush(display)
         
         # --- 4. SPUŠTĚNÍ APLIKACE ---

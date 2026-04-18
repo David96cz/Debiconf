@@ -255,7 +255,7 @@ get_section() {
 # === 1. PŘÍPRAVA A INTERAKTIVNÍ DOTAZY ===
 
 lxqt_setup_apps_and_defaults() {
-    log "6/7: Nastavuji chování aplikací, MIME typy, Prohlížeč a Autostart..."
+    log "6/8: Nastavuji chování aplikací, MIME typy, Prohlížeč a Autostart..."
     
     local LOCAL_APPS="$USER_HOME/.local/share/applications"
     local WRAPPER_BIN="$USER_HOME/.local/bin/busy-launch.py"
@@ -268,6 +268,10 @@ lxqt_setup_apps_and_defaults() {
         cp "$app" "$LOCAL_APPS/" || true
         sed -i "s|^Exec=|Exec=python3 $WRAPPER_BIN |" "$LOCAL_APPS/$app_name" || true
     done
+
+    # TOTO JE TEN FIX PRO DVOJKLIK (Aktualizace MIME mezipaměti)
+    log "Aktualizuji lokální MIME databázi pro zástupce s wrappery..."
+    su - "$REAL_USER" -c "update-desktop-database ~/.local/share/applications" || true
 
     # Skrytí aplikací
     local APPS_TO_HIDE_STR=$(get_section "$LOCAL_CONFIG" "APPS_TO_HIDE")
@@ -559,13 +563,14 @@ install_packages() {
             # Propojení MIME (aby systém věděl, že má použít ten vygenerovaný wine.desktop)
             su - "$REAL_USER" -c "xdg-mime default wine.desktop application/x-ms-dos-executable" || true
             su - "$REAL_USER" -c "update-desktop-database ~/.local/share/applications" || true
+            su - "$REAL_USER" -c "winetricks -q mono" || true
             
             # Vymazání cache, aby se ty ikony exáčů hned načetly
             rm -rf "$USER_HOME/.cache/thumbnails/*" || true
         fi
     fi
 
-if [ "$RUSTDESK_REQ" == "TRUE" ]; then
+    if [ "$RUSTDESK_REQ" == "TRUE" ]; then
         log "Instalace RustDesku zahájena (čistá Flatpak metoda)..."
         
         # 1. Pojistka, že je v systému nainstalovaný samotný Flatpak
@@ -615,7 +620,7 @@ setup_auto_updates() {
 # ==============================================================================
 
 lxqt_prepare_base_configs() {
-    log "1/7: Připravuji základní konfigurační soubory LXQt..."
+    log "1/8: Připravuji základní konfigurační soubory LXQt..."
     
     # Odstranění Windows konců řádků
     [ -f "$CONTENTS_DIR/lxqt/config/shortcuts.conf" ] && sed -i 's/\r$//' "$CONTENTS_DIR/lxqt/config/shortcuts.conf" || true
@@ -662,7 +667,7 @@ lxqt_prepare_base_configs() {
 }
 
 lxqt_setup_system_integrations() {
-    log "2/7: Nasazuji systémové integrace (Skripty, APT hook, Locale, Polkit, NM-Tray)..."
+    log "2/8: Nasazuji systémové integrace (Skripty, APT hook, Locale, Polkit, NM-Tray)..."
     
     local SCRIPTS_SRC="$CONTENTS_DIR/lxqt/scripts"
     mkdir -p "$USER_HOME/.local/bin"
@@ -720,7 +725,7 @@ lxqt_setup_system_integrations() {
 }
 
 lxqt_setup_appearance() {
-    log "3/7: Konfiguruji vzhled (stažení motivu, správce oken, panel, ikony)..."
+    log "3/8: Konfiguruji vzhled (stažení motivu, správce oken, panel, ikony)..."
     
     # 1. Stažení a příprava grafických podkladů (Lubuntu Artwork)
     log "Stahuji Lubuntu artwork a nasazuji ikony..."
@@ -819,7 +824,7 @@ lxqt_setup_appearance() {
 }
 
 lxqt_setup_shortcuts_and_menus() {
-    log "4/7: Přidávám klávesové zkratky a vlastní kontextová menu..."
+    log "4/8: Přidávám klávesové zkratky a vlastní kontextová menu..."
     
     local SHORTCUTS_SRC="$CONTENTS_DIR/lxqt/config/shortcuts.conf"
     local SHORTCUTS_CONF="$USER_HOME/.config/lxqt/globalkeyshortcuts.conf"
@@ -916,7 +921,7 @@ lxqt_setup_shortcuts_and_menus() {
 
 lxqt_packages_install() {
         
-    log "5/7 Instaluji balíčky a externí aplikace (Albert & PeaZip čistě pro amd64)..."
+    log "5/8 Instaluji balíčky a externí aplikace (Albert & PeaZip čistě pro amd64)..."
 
     # Kontrola architektury
     local SYS_ARCH=$(dpkg --print-architecture)
@@ -967,7 +972,7 @@ lxqt_packages_install() {
 }
 
 lxqt_setup_apps_and_defaults() {
-    log "6/7: Nastavuji chování aplikací, MIME typy a Autostart..."
+    log "6/8: Nastavuji chování aplikací, MIME typy a Autostart..."
     
     local LOCAL_APPS="$USER_HOME/.local/share/applications"
     local WRAPPER_BIN="$USER_HOME/.local/bin/busy-launch.py"
@@ -1118,7 +1123,7 @@ lxqt_setup_apps_and_defaults() {
 
 lxqt_config_backup() {
     # --- ZÁLOHA A AUTOMATICKÁ OBNOVA (100% TAR Snapshot) ---
-    log "7/7 Vytvářím 1:1 TAR snapshot .config pro případ, že by si uživatel smazal .config z domovského adresáře..."
+    log "8/8 Vytvářím 1:1 TAR snapshot .config pro případ, že by si uživatel smazal .config z domovského adresáře..."
     
     # 0. Nasazení kanárka (tajný soubor)
     touch "$USER_HOME/.config/lxqt/.debiconf_ok"
@@ -1145,6 +1150,52 @@ lxqt_config_backup() {
     # -------------------------------------------------------------
 }
 
+lxqt_drive_automount() {
+    log "7/8: Konfiguruji automatické a trvalé připojení interních datových disků (FSTAB)..."
+    
+    # Pojistka pro základní media adresář uživatele
+    mkdir -p "/media/$REAL_USER" 
+    chmod 755 "/media/$REAL_USER"
+
+    # lsblk -P vypíše data ve formátu KEY="value", což je perfektní pro bezpečné parsování
+    lsblk -P -o UUID,LABEL,FSTYPE,MOUNTPOINT,TYPE,RM | while read -r line; do
+        
+        # Nahraje hodnoty (UUID, LABEL, FSTYPE, MOUNTPOINT, TYPE, RM) do proměnných pro tento průběh cyklu
+        eval "$line"
+        
+        # FILTRY PRO DETEKCI SPRÁVNÉHO DISKU:
+        # 1. TYPE="part" -> Musí to být diskový oddíl (ne celá sda struktura)
+        # 2. RM="0" -> Nesmí to být "Removable" (ignoruje to USB flashky a tvoje instalační USB)
+        # 3. FSTYPE!="" a FSTYPE!="swap" -> Musí to mít souborový systém a nesmí to být swap
+        # 4. MOUNTPOINT!="/" a MOUNTPOINT!="/boot*" -> Ignoruje to právě běžící systémové oddíly Debianu
+        if [ "$TYPE" == "part" ] && [ "$RM" == "0" ] && [ -n "$FSTYPE" ] && [ "$FSTYPE" != "swap" ] && [ "$MOUNTPOINT" != "/" ] && [[ "$MOUNTPOINT" != /boot* ]]; then
+            
+            # Ošetření: Pokud disk nemá jméno (Label), vytvoříme mu hezké jméno z kousku UUID
+            if [ -z "$LABEL" ]; then
+                LABEL="DISK_${UUID:0:8}"
+            fi
+
+            # Definice cesty, která nesmí zmizet (fix pro cestující ikony)
+            local MOUNT_DIR="/media/$REAL_USER/$LABEL"
+
+            log "-> Detekován interní datový disk: $LABEL (UUID: $UUID)"
+
+            # 1. Vytvoření absolutně trvalé složky
+            mkdir -p "$MOUNT_DIR"
+            chmod 777 "$MOUNT_DIR"
+
+            # 2. Zápis do FSTAB (pokud tam tohle UUID ještě není zapsané)
+            if ! grep -q "$UUID" /etc/fstab; then
+                # x-gvfs-show zajistí, že se disk hezky ukáže v bočním panelu PCManFM-Qt
+                echo "UUID=$UUID  $MOUNT_DIR  auto  nosuid,nodev,nofail,x-gvfs-show  0  0" >> /etc/fstab
+                log "   [OK] Zapsáno do FSTAB. Disk se připojí automaticky."
+            else
+                log "   [-] Tento disk už ve FSTAB je, přeskakuji zápis."
+            fi
+        fi
+    done
+}
+
 configure_lxqt() {
     log "=== ZAHAJUJI KOMPLEXNÍ KONFIGURACI LXQT ==="
     
@@ -1154,6 +1205,7 @@ configure_lxqt() {
     lxqt_setup_shortcuts_and_menus
     lxqt_packages_install
     lxqt_setup_apps_and_defaults
+    lxqt_drive_automount
     
     chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" "$USER_HOME/.local" || true
 
