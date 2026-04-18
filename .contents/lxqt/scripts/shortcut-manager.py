@@ -88,7 +88,7 @@ class ShortcutApp(QMainWindow):
         self.intel_group = QGroupBox("Inteligentní nastavení")
         intel_layout = QVBoxLayout(self.intel_group)
         self.terminal_cb = QCheckBox("Spustit v terminálu")
-        self.wrapper_cb = QCheckBox("Použít Python Wrapper (proti zamrzání)")
+        self.wrapper_cb = QCheckBox("Použít Python Wrapper pro indikaci načítání")
         self.wrapper_cb.setChecked(True)
         intel_layout.addWidget(self.terminal_cb)
         intel_layout.addWidget(self.wrapper_cb)

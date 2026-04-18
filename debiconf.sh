@@ -522,19 +522,6 @@ lxqt_setup_system_integrations() {
     mkdir -p "$AUTOSTART_DIR"
     echo -e "[Desktop Entry]\nHidden=true" > "$AUTOSTART_DIR/nm-applet.desktop"
 
-    # === ČISTÉ AUTOMOUNTOVÁNÍ VŠECH DISKŮ PŘES NATIVNÍ PCMANFM-QT ===
-    local PCMANFM_CONF="$USER_HOME/.config/pcmanfm-qt/lxqt/settings.conf"
-    mkdir -p "$(dirname "$PCMANFM_CONF")"
-
-    # Zkontroluje, jestli už tam sekce Volume je. Pokud ano, přepíše ty dvě důležité hodnoty. Pokud ne, přidá ji na konec.
-    if grep -q "\[Volume\]" "$PCMANFM_CONF" 2>/dev/null; then
-        sed -i 's/^AutoRun=.*/AutoRun=false/' "$PCMANFM_CONF"
-        sed -i 's/^MountOnStartup=.*/MountOnStartup=true/' "$PCMANFM_CONF"
-        sed -i 's/^MountRemovable=.*/MountRemovable=true/' "$PCMANFM_CONF"
-    else
-        echo -e "\n[Volume]\nAutoRun=false\nMountOnStartup=true\nMountRemovable=true" >> "$PCMANFM_CONF"
-    fi
-
     mkdir -p /etc/polkit-1/rules.d
     printf 'polkit.addRule(function(action, subject) {\n    if ((action.id == "org.freedesktop.systemd1.manage-units" || \n         action.id == "org.freedesktop.systemd1.manage-unit-files") &&\n        subject.isInGroup("sudo")) {\n        var unit = action.lookup("unit");\n        if (unit == "rustdesk.service" || unit == "rustdesk") {\n            return polkit.Result.YES;\n        }\n    }\n});\n' > /etc/polkit-1/rules.d/60-rustdesk.rules
 
