@@ -306,6 +306,7 @@ class ShortcutApp(QMainWindow):
                 
             with open(output_file, 'w') as f:
                 f.write("[Desktop Entry]\n")
+                f.write("X-Debiconf-Custom=true\n")
                 f.write("Version=1.0\n")
                 f.write("Type=Application\n")
                 f.write(f"Name={name}\n")

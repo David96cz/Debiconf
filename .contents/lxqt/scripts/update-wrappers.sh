@@ -22,15 +22,17 @@ mkdir -p "$LOCAL_APPS"
 echo "🧹 Kontroluji a čistím smazané aplikace..."
 for local_app in "$LOCAL_APPS"/*.desktop; do
     [ -e "$local_app" ] || continue
+    
+    # NOVÁ POJISTKA: Pokud je tam naše značka, nesahat!
+    if grep -q "X-Debiconf-Custom=true" "$local_app"; then
+        continue
+    fi
+
     filename=$(basename "$local_app")
     system_app="$SYSTEM_APPS/$filename"
 
-    # Pokud systémový rodič už neexistuje
     if [ ! -f "$system_app" ]; then
-        # Bezpečnostní pojistka: Smažeme to JEN tehdy, pokud je to náš vygenerovaný wrapper.
-        # Tvých vlastních ručně vytvořených zástupců (z new-shortcut.sh) se to nedotkne.
         if grep -q "$SCRIPT_PATH" "$local_app"; then
-            # echo "🗑️ Mažu osiřelého zástupce po odinstalaci: $filename"
             rm -f "$local_app"
         fi
     fi
