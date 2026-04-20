@@ -22,6 +22,7 @@ nm-tray.desktop
 yad-icon-browser.desktop
 qps.desktop
 gdebi.desktop
+vim.desktop
 
 [AUTORUN]
 albert
@@ -54,8 +55,7 @@ yad-icon-browser.desktop
 nm-applet.desktop
 nm-connection-editor.desktop
 nm-tray.desktop
-tvurce-zastupcu.desktop
-spravce-zastupcu.desktop
+shortcut-manager.desktop
 albert.desktop
-flameshot.desktop
+org.flameshot.Flameshot.desktop
 vim.desktop
