@@ -646,6 +646,11 @@ lxqt_prepare_base_configs() {
         fi
     fi
 
+    # Zamezení možnosti odinstalace
+    echo ">> Ukládám seznam neodstranitelných aplikací..."
+    sed -n '/^\[UNREMOVALBE\]/,/^\[/p' "$CONFIG_TXT" | grep -v '^\[.*\]' | grep -vE '^\s*#|^\s*$' > /etc/debiconf-unremovable.txt
+    chmod 644 /etc/debiconf-unremovable.txt
+
     # QTerminal nenápadně stranou
     local Q_CONF="$USER_HOME/.config/qterminal.org/qterminal.ini"
     mkdir -p "$(dirname "$Q_CONF")"
@@ -1229,16 +1234,16 @@ configure_plasma() {
     mkdir -p "$USER_HOME/.config/gtk-3.0"
     echo -e "[Settings]\ngtk-decoration-layout=icon:minimize,maximize,close" > "$USER_HOME/.config/gtk-3.0/settings.ini" || true
 
-    rm -f "$USER_HOME/.local/share/applications/htop.desktop" || true
-    rm -f "$USER_HOME/.local/share/applications/custom-htop.desktop" || true
+    #rm -f "$USER_HOME/.local/share/applications/qps.desktop" || true
+    #rm -f "$USER_HOME/.local/share/applications/custom-qps.desktop" || true
 
     local SHORTCUTS_CONF="$USER_HOME/.config/kglobalshortcutsrc"
     touch "$SHORTCUTS_CONF"
     
-    if ! grep -q "^\[htop.desktop\]" "$SHORTCUTS_CONF"; then
-        echo -e "\n[htop.desktop]\n_launch=Ctrl+Shift+Esc,none,htop" >> "$SHORTCUTS_CONF"
+    if ! grep -q "^\[qps.desktop\]" "$SHORTCUTS_CONF"; then
+        echo -e "\n[qps.desktop]\n_launch=Ctrl+Shift+Esc,none,qps" >> "$SHORTCUTS_CONF"
     else
-        sed -i '/^\[htop.desktop\]/,/^\[/ s/^_launch=.*/_launch=Ctrl+Shift+Esc,none,htop/' "$SHORTCUTS_CONF" || true
+        sed -i '/^\[qps.desktop\]/,/^\[/ s/^_launch=.*/_launch=Ctrl+Shift+Esc,none,qps/' "$SHORTCUTS_CONF" || true
     fi
 
     if ! grep -q "^\[org.kde.spectacle.desktop\]" "$SHORTCUTS_CONF"; then

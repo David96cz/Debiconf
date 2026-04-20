@@ -10,6 +10,7 @@ zram-tools
 featherpad
 unattended-upgrades
 cups
+cups-bsd
 system-config-printer
 printer-driver-all
 avahi-daemon
