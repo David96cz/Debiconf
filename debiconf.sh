@@ -566,7 +566,6 @@ install_packages() {
             
             apt-get update -qq || true
             
-            # PŘIDÁNO: fonts-wine (aby fungovalo vykreslování písma v exe)
             log "Instaluji nejnovější verzi WineHQ Stable..."
             apt-get install -y --install-recommends winehq-stable fonts-wine || true
             
@@ -574,26 +573,26 @@ install_packages() {
             wget -qO /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks || true
             chmod +x /usr/local/bin/winetricks || true
 
-            # PŘIDÁNO: Tichá inicializace Wine profilu na pozadí bez vyskakovacích oken
-            log "Inicializuji Wine profil potichu, aby neotravoval uživatele..."
+            # --- OKAMŽITÁ INICIALIZACE WINE A INSTALACE MONO ---
+            log "Inicializuji Wine profil potichu a ihned stahuji .NET Mono..."
+            # 1. Vytvoří čistý profil bez otravných vyskakovacích oken
             su - "$REAL_USER" -c "WINEDLLOVERRIDES=mscoree,mshtml= wineboot -u" || true
-
-            apt-get install -y binfmt-support wine-binfmt icoextract icoextract-thumbnailer || true
+            # 2. Okamžitě stáhne a nainstaluje Mono, dokud má instalátor spolehlivě přístup k síti
+            su - "$REAL_USER" -c "winetricks -q mono" || true
 
             # --- SYSTÉMOVÉ POJIŠTĚNÍ WINE ---
             log "Aktivuji jádrovou podporu pro .exe a čistím cache..."
             
-            # Instalace podpory ikon a jádra (pokud už nemáš v apt seznamu)
-            apt install -y binfmt-support wine-binfmt icoextract icoextract-thumbnailer
+            # Očištěno od duplicit - instaluje se jen jednou
+            apt-get install -y binfmt-support wine-binfmt icoextract icoextract-thumbnailer || true
             
-            # Tohle prostě musí proběhnout jako příkaz, aby to jádro pochopilo
+            # Zápis do jádra
             /usr/sbin/update-binfmts --enable wine || true
             systemctl restart systemd-binfmt || true
             
             # Propojení MIME (aby systém věděl, že má použít ten vygenerovaný wine.desktop)
             su - "$REAL_USER" -c "xdg-mime default wine.desktop application/x-ms-dos-executable" || true
             su - "$REAL_USER" -c "update-desktop-database ~/.local/share/applications" || true
-            su - "$REAL_USER" -c "winetricks -q mono" || true
             
             # Vymazání cache, aby se ty ikony exáčů hned načetly
             rm -rf "$USER_HOME/.cache/thumbnails/*" || true
