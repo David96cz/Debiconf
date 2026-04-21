@@ -182,30 +182,28 @@ class ShortcutApp(QMainWindow):
         self.table.setRowCount(0)
         apps_dict = {} 
         
-        for d in [SYSTEM_APPS_DIR, APPS_DIR]:
-            if not os.path.exists(d): continue
-            # TADY JE TA ZMĚNA: os.walk místo os.listdir prohledá i podsložky (wine)
-            for root, dirs, files in os.walk(d):
-                for f in files:
-                    if f.endswith(".desktop"):
-                        path = os.path.join(root, f)
-                        name, icon, is_custom = parse_desktop_file(path)
+        # PROCHÁZÍME UŽ JEN LOKÁLNÍ SLOŽKU (protože tam máš zrcadlo všeho)
+        if not os.path.exists(APPS_DIR): return
+        
+        for root, dirs, files in os.walk(APPS_DIR):
+            for f in files:
+                if f.endswith(".desktop"):
+                    path = os.path.join(root, f)
+                    name, icon, is_custom = parse_desktop_file(path)
+                    
+                    if not name: continue
+                    
+                    # Inteligentní detekce typu
+                    is_wine = "wine" in path.lower() or "wine" in root.lower()
+                    if is_wine:
+                        typ = "Wine Aplikace"
+                    elif is_custom:
+                        typ = "Vlastní"
+                    else:
+                        typ = "Systémový"
                         
-                        if not name: continue
-                        
-                        # Inteligentní detekce typu
-                        is_wine = "wine" in path.lower()
-                        if is_wine:
-                            typ = "Wine Aplikace"
-                        elif is_custom:
-                            typ = "Vlastní"
-                        elif path.startswith(APPS_DIR):
-                            typ = "Lokální úprava"
-                        else:
-                            typ = "Systémový"
-                            
-                        # Klíčem je absolutní cesta, aby to vidělo i věci v podsložkách
-                        apps_dict[path] = {"name": name, "icon": icon, "path": path, "typ": typ}
+                    # Klíčem je název souboru
+                    apps_dict[f] = {"name": name, "icon": icon, "path": path, "typ": typ, "filename": f}
 
         sorted_keys = sorted(apps_dict.keys(), key=lambda x: apps_dict[x]["name"].lower())
         self.table.setRowCount(len(sorted_keys))
@@ -213,15 +211,26 @@ class ShortcutApp(QMainWindow):
         for row, key in enumerate(sorted_keys):
             data = apps_dict[key]
             
-            # Checkbox viditelnosti
+            # Checkbox viditelnosti (nebo Zámek)
             ck_widget = QWidget()
             ck_layout = QHBoxLayout(ck_widget)
-            cb = QCheckBox()
-            try:
-                with open(data["path"], 'r', errors='ignore') as f: 
-                    cb.setChecked("NoDisplay=true" not in f.read())
-            except: pass
-            ck_layout.addWidget(cb); ck_layout.setAlignment(Qt.AlignCenter); ck_layout.setContentsMargins(0,0,0,0)
+            
+            # Záchranná brzda: Správce zástupců nepůjde nikdy skrýt
+            is_manager = "správce zástupců" in data["name"].lower() or "shortcut-manager" in data["filename"].lower()
+            
+            if is_manager:
+                lbl = QLabel("🔒")
+                lbl.setAlignment(Qt.AlignCenter)
+                ck_layout.addWidget(lbl)
+            else:
+                cb = QCheckBox()
+                try:
+                    with open(data["path"], 'r', errors='ignore') as f: 
+                        cb.setChecked("NoDisplay=true" not in f.read())
+                except: pass
+                ck_layout.addWidget(cb)
+                
+            ck_layout.setAlignment(Qt.AlignCenter); ck_layout.setContentsMargins(0,0,0,0)
             self.table.setCellWidget(row, 0, ck_widget)
             
             # Ikona + Jméno
@@ -233,7 +242,7 @@ class ShortcutApp(QMainWindow):
             typ_item = QTableWidgetItem(data["typ"])
             if data["typ"] == "Vlastní": typ_item.setForeground(Qt.blue)
             elif data["typ"] == "Wine Aplikace": typ_item.setForeground(Qt.darkMagenta)
-            elif data["typ"] == "Lokální úprava": typ_item.setForeground(Qt.darkGreen)
+            else: typ_item.setForeground(Qt.black) # Systémový
             self.table.setItem(row, 2, typ_item)
             
             # Cesta (skrytá)
@@ -245,19 +254,37 @@ class ShortcutApp(QMainWindow):
             self.delete_btn.setEnabled(False)
             return
         typ = self.table.item(row, 2).text()
-        # Povolí smazat i ty Wine zástupce
-        self.delete_btn.setEnabled(typ in ["Vlastní", "Wine Aplikace", "Lokální úprava"])
+        # Smazat jdou POUZE zástupci vytvoření generátorem a Wine bordel. Systémové ikony zůstanou nedotčeny.
+        self.delete_btn.setEnabled(typ in ["Vlastní", "Wine Aplikace"])
+
+    def save_visibility(self):
+        for i in range(self.table.rowCount()):
+            path = self.table.item(i, 3).text()
+            widget_item = self.table.cellWidget(i, 0).layout().itemAt(0).widget()
+            
+            # Pokud narazíme na zablokovaného správce (Label místo Checkboxu), přeskočíme ho
+            if isinstance(widget_item, QLabel):
+                continue
+                
+            visible = widget_item.isChecked()
+            
+            # Zápis přímo do lokálního souboru (už žádné kopírování ze systému)
+            try:
+                with open(path, 'r', errors='ignore') as f: lines = f.readlines()
+                with open(path, 'w') as f:
+                    for line in lines:
+                        if not line.startswith("NoDisplay="): f.write(line)
+                    if not visible: f.write("NoDisplay=true\n")
+            except: continue
+                    
+        self.refresh_system_menu()
+        QMessageBox.information(self, "Hotovo", "Změny viditelnosti uloženy.")
 
     def delete_shortcut(self):
         row = self.table.currentRow()
         path = self.table.item(row, 3).text()
-        typ = self.table.item(row, 2).text()
-        
-        msg = "Opravdu trvale smazat tohoto zástupce?"
-        if typ == "Lokální úprava":
-            msg = "Smazáním této lokální úpravy se obnoví původní skrytý systémový zástupce. Pokračovat?"
             
-        if QMessageBox.question(self, "Smazat", msg) == QMessageBox.Yes:
+        if QMessageBox.question(self, "Smazat", "Opravdu trvale smazat tohoto zástupce?") == QMessageBox.Yes:
             try:
                 os.remove(path)
                 self.load_applications()
@@ -268,29 +295,6 @@ class ShortcutApp(QMainWindow):
         for i in range(self.table.rowCount()):
             name = self.table.item(i, 1).text().lower()
             self.table.setRowHidden(i, text.lower() not in name)
-
-    def save_visibility(self):
-        for i in range(self.table.rowCount()):
-            path = self.table.item(i, 3).text()
-            visible = self.table.cellWidget(i, 0).layout().itemAt(0).widget().isChecked()
-            
-            target = path
-            if path.startswith(SYSTEM_APPS_DIR) and not visible:
-                target = os.path.join(APPS_DIR, os.path.basename(path))
-                if not os.path.exists(target):
-                    if not os.path.exists(APPS_DIR): os.makedirs(APPS_DIR)
-                    shutil.copy(path, target)
-
-            try:
-                with open(target, 'r', errors='ignore') as f: lines = f.readlines()
-                with open(target, 'w') as f:
-                    for line in lines:
-                        if not line.startswith("NoDisplay="): f.write(line)
-                    if not visible: f.write("NoDisplay=true\n")
-            except: continue
-                    
-        self.refresh_system_menu()
-        QMessageBox.information(self, "Hotovo", "Změny uloženy.")
 
     # --- ZBYTEK LOGIKY (Generátor) ---
     def refresh_system_menu(self):
