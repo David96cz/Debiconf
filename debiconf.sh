@@ -1026,7 +1026,7 @@ lxqt_packages_install() {
     # Zkusíme stáhnout klíč. Pokud to selže (výpadek netu), repozitář se nepřidá a APT nezkolabuje.
     if curl -fsSL --connect-timeout 10 --retry 3 https://download.opensuse.org/repositories/home:manuelschneid3r/Debian_13/Release.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/home_manuelschneid3r.gpg > /dev/null; then
         echo 'deb http://download.opensuse.org/repositories/home:/manuelschneid3r/Debian_13/ /' | tee /etc/apt/sources.list.d/albert.list
-        apt-get update -y
+        apt-get update -y || true
         
         # Zkusíme instalaci přes apt (pro automatické updaty v budoucnu)
         if ! apt-get install -y albert; then
