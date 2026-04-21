@@ -2,7 +2,7 @@
 import sys
 import os
 import subprocess
-from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
+from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, 
                              QLineEdit, QPushButton, QMessageBox, QListWidget, 
                              QListWidgetItem, QLabel)
 from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal
@@ -10,33 +10,43 @@ from PyQt5.QtGui import QIcon
 
 # --- VLÁKNO PRO ODINSTALACI NA POZADÍ ---
 class UninstallWorker(QThread):
-    finished = pyqtSignal(int, str, str, str)
+    finished = pyqtSignal(int, str, str, str, bool) # Přidán boolean pro identifikaci Wine
 
-    def __init__(self, filepath, app_name, filename):
+    def __init__(self, filepath, app_name, filename, is_wine=False):
         super().__init__()
-        self.filepath = filepath
+        self.filepath = filepath # U Wine aplikací to obsahuje to podivné ID {UUID}
         self.app_name = app_name
         self.filename = filename
+        self.is_wine = is_wine
 
     def run(self):
-        if self.filepath.startswith("/usr/share/applications"):
+        if self.is_wine:
+            # SPUŠTĚNÍ NATIVNÍHO WINDOWS ODINSTALÁTORU PŘES WINE
+            # self.filepath obsahuje UUID, které jsme dostali z wine uninstaller --list
+            result = subprocess.run(["wine", "uninstaller", "--remove", self.filepath])
+            # Gui odinstalátor si odkliká uživatel, pak se vlákno ukončí
+            self.finished.emit(result.returncode, self.filepath, self.app_name, self.filename, True)
+            
+        elif self.filepath.startswith("/usr/share/applications"):
+            # LINUX APT APLIKACE
             dpkg_result = subprocess.run(["dpkg", "-S", self.filepath], capture_output=True, text=True)
             if dpkg_result.returncode == 0:
                 pkg_name = dpkg_result.stdout.split(":")[0].strip()
                 cmd = f"apt-get remove --purge -y {pkg_name} && apt-get autoremove -y"
                 result = subprocess.run(["lxqt-sudo", "bash", "-c", cmd])
-                self.finished.emit(result.returncode, self.filepath, self.app_name, self.filename)
+                self.finished.emit(result.returncode, self.filepath, self.app_name, self.filename, False)
             else:
                 self.remove_local()
         else:
+            # LOKÁLNÍ ZÁSTUPCI
             self.remove_local()
 
     def remove_local(self):
         try:
             os.remove(self.filepath)
-            self.finished.emit(0, self.filepath, self.app_name, self.filename)
+            self.finished.emit(0, self.filepath, self.app_name, self.filename, False)
         except:
-            self.finished.emit(1, self.filepath, self.app_name, self.filename)
+            self.finished.emit(1, self.filepath, self.app_name, self.filename, False)
 
 
 class AppUninstaller(QWidget):
@@ -56,8 +66,8 @@ class AppUninstaller(QWidget):
         return blacklist
 
     def initUI(self):
-        self.setWindowTitle('Odinstalovat programy')
-        self.setFixedSize(550, 650) # Zvětšeno pro nové tlačítko
+        self.setWindowTitle('Odinstalovat programy (Sjednocený Správce)')
+        self.setFixedSize(550, 600)
         self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
         
         self.setStyleSheet("""
@@ -75,24 +85,18 @@ class AppUninstaller(QWidget):
             }
             QPushButton#btnUninstall:hover { background-color: #b71c1c; }
             QPushButton#btnUninstall:disabled { background-color: #9e9e9e; color: #e0e0e0; }
-            
-            /* Tlačítko pro WINE */
-            QPushButton#btnWine {
-                background-color: #7b1fa2; color: white; padding: 12px; font-weight: bold; border-radius: 5px; font-size: 11pt; margin-top: 10px;
-            }
-            QPushButton#btnWine:hover { background-color: #4a148c; }
         """)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        lbl_info = QLabel("<b>Správce aplikací (Linux)</b><br>Vyberte linuxový program pro trvalé odstranění.")
+        lbl_info = QLabel("<b>Správce aplikací</b><br>Vyberte program nebo hru pro trvalé odstranění.")
         lbl_info.setStyleSheet("font-size: 12pt;")
         layout.addWidget(lbl_info)
 
         self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("Hledat aplikaci (např. Chrome)...")
+        self.search_bar.setPlaceholderText("Hledat (např. Chrome nebo Call of Duty)...")
         self.search_bar.textChanged.connect(self.filter_apps)
         layout.addWidget(self.search_bar)
         
@@ -101,85 +105,67 @@ class AppUninstaller(QWidget):
         self.app_list.setStyleSheet("font-size: 12pt;")
         layout.addWidget(self.app_list)
         
-        self.btn_uninstall = QPushButton('Odinstalovat vybranou linuxovou aplikaci')
+        self.btn_uninstall = QPushButton('Odinstalovat vybraný program')
         self.btn_uninstall.setObjectName("btnUninstall")
         self.btn_uninstall.setCursor(Qt.PointingHandCursor)
         self.btn_uninstall.clicked.connect(self.handle_uninstall)
         layout.addWidget(self.btn_uninstall)
         
-        # --- NOVÉ TLAČÍTKO PRO WINE ---
-        self.btn_wine = QPushButton('Odinstalovat Windows hry a programy (Wine)')
-        self.btn_wine.setObjectName("btnWine")
-        self.btn_wine.setCursor(Qt.PointingHandCursor)
-        self.btn_wine.clicked.connect(self.run_wine_uninstaller)
-        layout.addWidget(self.btn_wine)
-        
         self.setLayout(layout)
 
     def load_apps(self):
         self.app_list.clear()
-        
-        dirs_to_scan = [
-            "/usr/share/applications",
-            os.path.expanduser("~/.local/share/applications")
-        ]
-        
         apps_data = {}
 
+        # 1. NAČTENÍ LINUXOVÝCH APLIKACÍ (Jako předtím)
+        dirs_to_scan = ["/usr/share/applications", os.path.expanduser("~/.local/share/applications")]
         for directory in dirs_to_scan:
-            if not os.path.exists(directory):
-                continue
-                
+            if not os.path.exists(directory): continue
             for filename in os.listdir(directory):
-                if not filename.endswith(".desktop"):
-                    continue
-                    
-                if filename.lower() in self.unremovable_list:
-                    continue
-                    
+                if not filename.endswith(".desktop") or filename.lower() in self.unremovable_list: continue
                 filepath = os.path.join(directory, filename)
-                
                 try:
-                    with open(filepath, 'r', errors='ignore') as f:
-                        content = f.read()
-                        
-                    # IGNOROVÁNÍ SKRYTÝCH A CUSTOM ZÁSTUPCŮ (Z Generátoru)
-                    if "NoDisplay=true" in content or "X-Debiconf-Custom=true" in content:
-                        continue
-                        
-                    temp_name = ""
-                    temp_name_cs = ""
-                    icon_name = "application-x-executable"
-                    categories = ""
+                    with open(filepath, 'r', errors='ignore') as f: content = f.read()
+                    if "NoDisplay=true" in content or "X-Debiconf-Custom=true" in content: continue
                     
-                    in_main_section = False
-                    
+                    temp_name, temp_name_cs, icon_name, categories, in_main = "", "", "application-x-executable", "", False
                     for line in content.splitlines():
                         line = line.strip()
-                        if line.startswith("["):
-                            in_main_section = (line == "[Desktop Entry]")
-                            continue
-                            
-                        if not in_main_section:
-                            continue
-                            
+                        if line.startswith("["): in_main = (line == "[Desktop Entry]"); continue
+                        if not in_main: continue
                         if line.startswith("Name="): temp_name = line.split("=", 1)[1].strip()
                         elif line.startswith("Name[cs]="): temp_name_cs = line.split("=", 1)[1].strip()
                         elif line.startswith("Icon="): icon_name = line.split("=", 1)[1].strip()
                         elif line.startswith("Categories="): categories = line.split("=", 1)[1].strip()
 
                     name = temp_name_cs if temp_name_cs else (temp_name if temp_name else filename)
-
                     cat_lower = categories.lower()
-                    if "settings" in cat_lower or "system" in cat_lower or "desktopsettings" in cat_lower:
-                        continue
+                    if "settings" in cat_lower or "system" in cat_lower or "desktopsettings" in cat_lower: continue
                     
                     if name not in apps_data:
-                        apps_data[name] = {"filepath": filepath, "filename": filename, "icon": icon_name}
-                        
-                except Exception:
-                    continue
+                        apps_data[name] = {"filepath": filepath, "filename": filename, "icon": icon_name, "is_wine": False}
+                except: continue
 
+        # 2. NAČTENÍ WINDOWS (WINE) APLIKACÍ PŘÍMO Z REGISTRŮ!
+        try:
+            # Zavoláme wine, ať nám tajně vyblije seznam všeho, co se dá odinstalovat
+            wine_list = subprocess.run(["wine", "uninstaller", "--list"], capture_output=True, text=True, env=os.environ)
+            if wine_list.returncode == 0:
+                for line in wine_list.stdout.splitlines():
+                    if "|||" in line:
+                        parts = line.split("|||")
+                        app_uuid = parts[0].strip() # To je to ID, co uninstaller potřebuje
+                        app_name = parts[1].strip()
+                        
+                        # Přidáme to do seznamu s jasným popiskem
+                        display_name = f"{app_name} (Windows Program)"
+                        if display_name not in apps_data:
+                            # Uložíme UUID jako 'filepath', is_wine=True to pak pošle správnému programu
+                            apps_data[display_name] = {"filepath": app_uuid, "filename": "wine_app", "icon": "wine", "is_wine": True}
+        except Exception as e:
+            print(f"Chyba při čtení Wine registrů: {e}")
+
+        # 3. VYKRESLENÍ VŠEHO DO JEDNOHO SEZNAMU
         for name in sorted(apps_data.keys()):
             item_data = apps_data[name]
             item = QListWidgetItem(name)
@@ -187,24 +173,33 @@ class AppUninstaller(QWidget):
             icon_str = item_data["icon"]
             icon = QIcon()
             
-            if os.path.isabs(icon_str) and os.path.exists(icon_str):
-                icon = QIcon(icon_str)
+            # Nastavení ikon
+            if item_data["is_wine"]:
+                # Pro Windows hry to natvrdo nastaví Wine ikonu
+                icon = QIcon.fromTheme("wine")
+                if icon.isNull(): icon = QIcon.fromTheme("application-x-ms-dos-executable")
             else:
-                icon_base = icon_str.rsplit('.', 1)[0] if icon_str.lower().endswith(('.png', '.svg', '.xpm', '.ico')) else icon_str
-                icon = QIcon.fromTheme(icon_base)
-                
-                if icon.isNull():
-                    for path in [f"/usr/share/pixmaps/{icon_base}.png", f"/usr/share/pixmaps/{icon_base}.svg",
-                                 f"{os.path.expanduser('~')}/.local/share/icons/{icon_base}.png", f"{os.path.expanduser('~')}/.local/share/icons/{icon_base}.svg"]:
-                        if os.path.exists(path):
-                            icon = QIcon(path)
-                            break
-                            
-                if icon.isNull(): icon = QIcon.fromTheme("application-x-executable")
+                # Běžné linuxové ikony
+                if os.path.isabs(icon_str) and os.path.exists(icon_str):
+                    icon = QIcon(icon_str)
+                else:
+                    icon_base = icon_str.rsplit('.', 1)[0] if icon_str.lower().endswith(('.png', '.svg', '.xpm', '.ico')) else icon_str
+                    icon = QIcon.fromTheme(icon_base)
+                    if icon.isNull():
+                        for path in [f"/usr/share/pixmaps/{icon_base}.png", f"/usr/share/pixmaps/{icon_base}.svg",
+                                     f"{os.path.expanduser('~')}/.local/share/icons/{icon_base}.png", f"{os.path.expanduser('~')}/.local/share/icons/{icon_base}.svg"]:
+                            if os.path.exists(path): icon = QIcon(path); break
+                    if icon.isNull(): icon = QIcon.fromTheme("application-x-executable")
                     
             item.setIcon(icon)
             item.setData(Qt.UserRole, item_data["filepath"])
             item.setData(Qt.UserRole + 1, item_data["filename"])
+            item.setData(Qt.UserRole + 2, item_data["is_wine"]) # Uložení informace, že jde o hru
+            
+            # Wine aplikace zbarvíme trochu odlišně (volitelné, pro lepší přehlednost)
+            if item_data["is_wine"]:
+                item.setForeground(Qt.darkMagenta)
+                
             self.app_list.addItem(item)
 
     def filter_apps(self, text):
@@ -221,6 +216,7 @@ class AppUninstaller(QWidget):
         self.app_name = current_item.text()
         filepath = current_item.data(Qt.UserRole)
         filename = current_item.data(Qt.UserRole + 1)
+        is_wine = current_item.data(Qt.UserRole + 2)
         
         reply = QMessageBox.question(self, 'Potvrzení odinstalace', 
                                      f"Opravdu chcete trvale odstranit program <b>{self.app_name}</b>?",
@@ -229,26 +225,29 @@ class AppUninstaller(QWidget):
         if reply != QMessageBox.Yes: return
 
         self.btn_uninstall.setEnabled(False)
-        self.btn_uninstall.setText("Probíhá odinstalace...")
+        self.btn_uninstall.setText("Probíhá odinstalace..." if not is_wine else "Spouštím odinstalátor...")
         self.app_list.setEnabled(False)
         current_item.setText(f"{self.app_name}  (Zpracovávám...)")
 
-        self.worker = UninstallWorker(filepath, self.app_name, filename)
+        self.worker = UninstallWorker(filepath, self.app_name, filename, is_wine)
         self.worker.finished.connect(self.on_uninstall_finished)
         self.worker.start()
 
-    def on_uninstall_finished(self, returncode, filepath, app_name, filename):
+    def on_uninstall_finished(self, returncode, filepath, app_name, filename, is_wine):
         self.btn_uninstall.setEnabled(True)
-        self.btn_uninstall.setText('Odinstalovat vybranou linuxovou aplikaci')
+        self.btn_uninstall.setText('Odinstalovat vybraný program')
         self.app_list.setEnabled(True)
 
         if returncode == 0:
-            self.post_uninstall_cleanup(filename)
+            if not is_wine:
+                self.post_uninstall_cleanup(filename)
             QMessageBox.information(self, "Hotovo", f"Program {app_name} byl úspěšně odstraněn.")
             self.load_apps()
             self.search_bar.clear()
         else:
-            QMessageBox.warning(self, "Zrušeno", "Odinstalace byla zrušena nebo se nezdařila.")
+            # U wine to nevyhodí chybu, pokud to uživatel prostě jen zrušil v tom Windows okně
+            if not is_wine:
+                QMessageBox.warning(self, "Zrušeno", "Odinstalace byla zrušena nebo se nezdařila.")
             self.load_apps()
 
     def post_uninstall_cleanup(self, filename):
@@ -257,14 +256,6 @@ class AppUninstaller(QWidget):
             try: os.remove(local_path)
             except: pass
         subprocess.run(["update-desktop-database", os.path.expanduser("~/.local/share/applications")], capture_output=True)
-
-    # --- SPUŠTĚNÍ NATIVNÍHO WINE ODINSTALÁTORU ---
-    def run_wine_uninstaller(self):
-        try:
-            # Pustíme wine uninstaller jako proces na pozadí, ať to nezasekne Python okno
-            subprocess.Popen(["wine", "uninstaller"])
-        except Exception as e:
-            QMessageBox.critical(self, "Chyba", f"Nepodařilo se spustit Wine uninstaller.\n{str(e)}")
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
