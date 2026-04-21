@@ -10,25 +10,40 @@ from PyQt5.QtGui import QIcon
 
 # --- VLÁKNO PRO ODINSTALACI NA POZADÍ ---
 class UninstallWorker(QThread):
-    finished = pyqtSignal(int, str, str, str, bool) # Přidán boolean pro identifikaci Wine
+    finished = pyqtSignal(int, str, str, str, bool)
 
     def __init__(self, filepath, app_name, filename, is_wine=False):
         super().__init__()
-        self.filepath = filepath # U Wine aplikací to obsahuje to podivné ID {UUID}
+        self.filepath = filepath # U Wine aplikací to obsahuje ID klíče
         self.app_name = app_name
         self.filename = filename
         self.is_wine = is_wine
 
     def run(self):
         if self.is_wine:
-            # SPUŠTĚNÍ NATIVNÍHO WINDOWS ODINSTALÁTORU PŘES WINE
-            # self.filepath obsahuje UUID, které jsme dostali z wine uninstaller --list
-            result = subprocess.run(["wine", "uninstaller", "--remove", self.filepath])
-            # Gui odinstalátor si odkliká uživatel, pak se vlákno ukončí
-            self.finished.emit(result.returncode, self.filepath, self.app_name, self.filename, True)
+            # 1. Spustíme nativní Windows odinstalátor
+            subprocess.run(["wine", "uninstaller", "--remove", self.filepath])
+            
+            # 2. DONUTÍME WINE OKAMŽITĚ ZAPSAT ZMĚNY NA DISK!
+            subprocess.run(["wineserver", "-w"])
+            
+            # 3. Zkontrolujeme pravdu: Zmizel ten klíč z registrů?
+            still_exists = False
+            for reg_file in ["system.reg", "user.reg"]:
+                reg_path = os.path.expanduser(f"~/.wine/{reg_file}")
+                if os.path.exists(reg_path):
+                    with open(reg_path, 'r', errors='ignore') as f:
+                        if self.filepath in f.read():
+                            still_exists = True
+                            break
+            
+            # Návratové kódy: 0 = úspěch, 2 = zrušeno uživatelem
+            if still_exists:
+                self.finished.emit(2, self.filepath, self.app_name, self.filename, True)
+            else:
+                self.finished.emit(0, self.filepath, self.app_name, self.filename, True)
             
         elif self.filepath.startswith("/usr/share/applications"):
-            # LINUX APT APLIKACE
             dpkg_result = subprocess.run(["dpkg", "-S", self.filepath], capture_output=True, text=True)
             if dpkg_result.returncode == 0:
                 pkg_name = dpkg_result.stdout.split(":")[0].strip()
@@ -38,7 +53,6 @@ class UninstallWorker(QThread):
             else:
                 self.remove_local()
         else:
-            # LOKÁLNÍ ZÁSTUPCI
             self.remove_local()
 
     def remove_local(self):
@@ -250,6 +264,24 @@ class AppUninstaller(QWidget):
         self.worker.start()
 
     def on_uninstall_finished(self, returncode, filepath, app_name, filename, is_wine):
+        self.btn_uninstall.setEnabled(True)
+        self.btn_uninstall.setText('Odinstalovat vybraný program')
+        self.app_list.setEnabled(True)
+
+        if returncode == 0:
+            if not is_wine:
+                self.post_uninstall_cleanup(filename)
+            QMessageBox.information(self, "Hotovo", f"Program {app_name} byl úspěšně odstraněn.")
+            self.search_bar.clear()
+        elif returncode == 2:
+            # Tohle zachytí ten moment, kdy to uživatel v okně Wine zruší
+            QMessageBox.information(self, "Zrušeno", f"Odinstalace programu {app_name} byla přerušena.")
+        else:
+            if not is_wine:
+                QMessageBox.warning(self, "Zrušeno", "Odinstalace byla zrušena nebo se nezdařila.")
+        
+        # Načteme seznam znova v KAŽDÉM PŘÍPADĚ (teď už i pro Wine bez problému)
+        self.load_apps()
         self.btn_uninstall.setEnabled(True)
         self.btn_uninstall.setText('Odinstalovat vybraný program')
         self.app_list.setEnabled(True)
