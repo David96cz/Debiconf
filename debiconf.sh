@@ -1278,7 +1278,7 @@ lxqt_setup_apps_and_defaults() {
         done
     fi
 
-    # --- KONFIGURACE ALBERT A PEAZIP (Dynamické cesty) ---
+# --- KONFIGURACE ALBERT A PEAZIP (Dynamické cesty) ---
     log "Nasazuji konfigurace pro Albert a PeaZip..."
     
     # 1. Albert
@@ -1305,6 +1305,14 @@ lxqt_setup_apps_and_defaults() {
     mkdir -p "$ALBERT_STATE_DIR"
     echo -e "[General]\nlast_used_version=34.0.10" > "$ALBERT_STATE_DIR/state"
 
+    # FIX PRO AUTOSTART (Zabití staré instance při odhlášení/přihlášení)
+    local AUTOSTART_DIR="$USER_HOME/.config/autostart"
+    mkdir -p "$AUTOSTART_DIR"
+    cp /usr/share/applications/albert.desktop "$AUTOSTART_DIR/" 2>/dev/null || true
+    if [ -f "$AUTOSTART_DIR/albert.desktop" ]; then
+        sed -i 's/^Exec=.*/Exec=sh -c "killall -9 albert 2>\/dev\/null; sleep 1 \&\& albert"/' "$AUTOSTART_DIR/albert.desktop"
+    fi
+
     # 2. PeaZip
     local PEAZIP_SRC="$CONTENTS_DIR/lxqt/config/peazip.conf"
     local PEAZIP_DEST="$USER_HOME/.config/peazip/conf.txt"
@@ -1329,15 +1337,26 @@ lxqt_setup_apps_and_defaults() {
         esac
         
         # Extrémně bezpečné nahrazení přes awk (imunní na \r z Windows)
-        # Najde [language], vytiskne ho, přeskočí na další řádek, 
-        # ten zahodí a místo něj vytiskne náš jazyk. Zbytek souboru nechá být.
         awk -v lang="$PEAZIP_LANG" '
             /^\[language\]\r?$/ { print; getline; print lang; next }
             { print }
         ' "$PEAZIP_DEST" > "${PEAZIP_DEST}.tmp" && mv "${PEAZIP_DEST}.tmp" "$PEAZIP_DEST"
+
+        # Definuj, co v systému aktuálně používáš na archivy
+        local ARCHIVER_APP="peazip" 
+
+        # Zápis do konfigurace PCManFM-Qt (OPRAVA: $USER_HOME místo $HOME)
+        local PCMANFM_CONF="$USER_HOME/.config/pcmanfm-qt/lxqt/settings.conf"
+        mkdir -p "$(dirname "$PCMANFM_CONF")"
+        if [ -f "$PCMANFM_CONF" ]; then
+            sed -i '/^Archiver=/d' "$PCMANFM_CONF"
+            sed -i "/^\[Behavior\]/a Archiver=$ARCHIVER_APP" "$PCMANFM_CONF"
+        else
+            # Zajištění funkčnosti i když soubor ještě vůbec neexistuje
+            echo -e "[Behavior]\nArchiver=$ARCHIVER_APP" > "$PCMANFM_CONF"
+        fi
         # ------------------------------------------
     fi
-}
 
 lxqt_config_backup() {
     # --- ZÁLOHA A AUTOMATICKÁ OBNOVA (100% TAR Snapshot) ---
