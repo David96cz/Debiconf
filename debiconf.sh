@@ -1278,7 +1278,7 @@ lxqt_setup_apps_and_defaults() {
         done
     fi
 
-# --- KONFIGURACE ALBERT A PEAZIP (Dynamické cesty) ---
+    # --- KONFIGURACE ALBERT A PEAZIP (Dynamické cesty) ---
     log "Nasazuji konfigurace pro Albert a PeaZip..."
     
     # 1. Albert
@@ -1357,6 +1357,7 @@ lxqt_setup_apps_and_defaults() {
         fi
         # ------------------------------------------
     fi
+}
 
 lxqt_config_backup() {
     # --- ZÁLOHA A AUTOMATICKÁ OBNOVA (100% TAR Snapshot) ---
