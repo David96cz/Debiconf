@@ -292,19 +292,25 @@ class AppUninstaller(QWidget):
         self.worker.start()
 
     def on_uninstall_finished(self, returncode, filepath, app_name, filename, is_wine):
+        # 1. Okamžité obnovení tlačítek a seznamu
         self.btn_uninstall.setEnabled(True)
         self.btn_uninstall.setText('Odinstalovat vybraný program')
         self.app_list.setEnabled(True)
 
+        # 2. Logika vyskakovacích oken
         if returncode == 0:
-            if not is_wine: self.post_uninstall_cleanup(filename)
+            # Úspěch - vyskočí okno
+            if not is_wine:
+                self.post_uninstall_cleanup(filename)
             QMessageBox.information(self, "Hotovo", f"Program {app_name} byl úspěšně odstraněn.")
             self.search_bar.clear()
-        elif returncode == 2:
-            QMessageBox.information(self, "Zrušeno", f"Odinstalace programu {app_name} byla přerušena.")
-        else:
-            if not is_wine: QMessageBox.warning(self, "Zrušeno", "Odinstalace byla zrušena nebo se nezdařila.")
-        
+        elif returncode == 1 and not is_wine:
+            # Tvrdá chyba u Linux balíčku (např. chybějící práva)
+            QMessageBox.warning(self, "Chyba", "Při odinstalaci došlo k chybě.")
+            
+        # POKUD JE RETURNCODE 2 (Zrušeno u Wine), NESTANE SE VŮBEC NIC. Žádné okno.
+
+        # 3. Potiché znovunačtení seznamu (aby zmizela hláška "Zpracovávám...")
         self.load_apps()
 
     def post_uninstall_cleanup(self, filename):
