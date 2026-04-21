@@ -19,10 +19,14 @@ SYSTEM_APPS_DIR = "/usr/share/applications"
 BUSY_SCRIPT = os.path.join(USER_HOME, ".local/bin/busy-launch.py")
 
 XDG_CATEGORIES = [
-    ("🎮 Hry", "Game"), ("🌍 Internet", "Network"), ("🎨 Grafika", "Graphics"),
-    ("💼 Kancelář", "Office"), ("🎬 Zvuk a Video", "AudioVideo"),
-    ("🛠️  Systémové nástroje", "System;Utility"), ("💻 Vývoj", "Development"),
-    ("🎒 Příslušenství", "Qt;Utility")
+    ("Hry", "Game", "applications-games"), 
+    ("Internet", "Network", "applications-internet"), 
+    ("Grafika", "Graphics", "applications-graphics"),
+    ("Kancelář", "Office", "applications-office"), 
+    ("Zvuk a Video", "AudioVideo", "applications-multimedia"),
+    ("Systémové nástroje", "System;Utility", "applications-system"), 
+    ("Vývoj", "Development", "applications-development"),
+    ("Příslušenství", "Qt;Utility", "applications-accessories")
 ]
 
 # --- POMOCNÉ FUNKCE ---
@@ -107,8 +111,18 @@ class ShortcutApp(QMainWindow):
         form_layout.addRow(self.intel_group)
         
         self.category_input = QComboBox()
-        for friendly_name, xdg_name in XDG_CATEGORIES: self.category_input.addItem(friendly_name, xdg_name)
-        form_layout.addRow("Kategorie menu:", self.category_input)
+        self.category_input.setIconSize(QSize(24, 24)) # Nastavení hezké velikosti ikon v menu
+        
+        for friendly_name, xdg_name, icon_name in XDG_CATEGORIES:
+            # Načte nativní systémovou ikonu podle názvu
+            icon = QIcon.fromTheme(icon_name)
+            if icon.isNull():
+                icon = QIcon.fromTheme("applications-other")
+            
+            # Přidá do menu: Ikonu, Viditelný text, Skrytá XDG data pro uložení
+            self.category_input.addItem(icon, friendly_name, xdg_name)
+            
+        form_layout.addRow("Kategorie menu:", self.category_input)  
         
         self.icon_input = QLineEdit()
         self.icon_btn = QPushButton("Vybrat...")
