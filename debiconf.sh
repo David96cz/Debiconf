@@ -497,138 +497,47 @@ prepare_system() {
 
 # === 2. INSTALACE BALÍČKŮ A PROHLÍŽEČŮ ===
 
-install_packages() {
-    log "Načítám konfigurace a instaluji balíčky pro architekturu: $SYS_ARCH..."
+prepare_system() {
+    log "Základní příprava systému a záchrana Wi-Fi sítě..."
     
-    local ALL_PKGS=$(get_section "$GLOBAL_CONFIG" "INSTALL")
-    ALL_PKGS+=" $(get_section "$LOCAL_CONFIG" "CORE_PACKAGES")"
-    ALL_PKGS+=" $(get_section "$LOCAL_CONFIG" "EXTRA_PACKAGES")"
-    
-    read -r -a PKG_ARRAY <<< "$ALL_PKGS"
-    
-    if [ ${#PKG_ARRAY[@]} -gt 0 ]; then
-        apt-get install -y --no-install-recommends "${PKG_ARRAY[@]}"
+    # 1. ZÁCHRANA WI-FI ÚDAJŮ PŘED SMAZÁNÍM (Tohle vyřeší tu nepřipojenou síť po startu)
+    local WIFI_SSID=""
+    local WIFI_PSK=""
+    if [ -f /etc/network/interfaces ]; then
+        WIFI_SSID=$(grep 'wpa-ssid' /etc/network/interfaces | cut -d' ' -f2- | tr -d '"' | xargs)
+        WIFI_PSK=$(grep 'wpa-psk' /etc/network/interfaces | cut -d' ' -f2- | tr -d '"' | xargs)
     fi
 
-    log "Instaluji prohlížeč..."
-    case $BROWSER_CHOICE in
-        1) 
-            if command -v google-chrome &> /dev/null; then
-                log "Google Chrome je již nainstalován, přeskakuji..."
-            elif [ "$SYS_ARCH" == "arm64" ]; then
-                log "UPOZORNĚNÍ: Google Chrome nevydává balíčky pro ARM. Instaluji jako náhradu Chromium."
-                if command -v chromium &> /dev/null; then
-                    log "Chromium je již nainstalováno, přeskakuji..."
-                else
-                    apt-get install -y chromium chromium-l10n || true
-                fi
-            else
-                log "Stahuji Google Chrome..."
-                wget --timeout=15 --tries=3 -q --show-progress -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && apt-get install -y /tmp/chrome.deb || log "CHYBA: Server Google neodpovídá, Chrome přeskočen." 
-            fi
-            ;;
-        2) 
-            if command -v chromium &> /dev/null; then
-                log "Chromium je již nainstalováno, přeskakuji..."
-            else
-                apt-get install -y chromium chromium-l10n || true 
-            fi
-            ;;
-        3) 
-            if command -v brave-browser &> /dev/null; then
-                log "Brave Browser je již nainstalován, přeskakuji..."
-            else
-                curl -fsS https://dl.brave.com/install.sh | sh || true 
-            fi
-            ;;
-        4) 
-            if command -v firefox &> /dev/null; then
-                log "Firefox je již nainstalován, přeskakuji..."
-            else
-                apt-get install -y firefox-esr firefox-esr-l10n-cs || true 
-            fi
-            ;;
-    esac
+    apt-get update -qq || true
+    apt-get install -y sudo curl wget dpkg-dev git dbus-x11 numlockx plymouth plymouth-themes network-manager
 
-    log "Instaluji kancelářský balík..."
-    case $OFFICE_CHOICE in
-        1) 
-            if command -v libreoffice &> /dev/null; then
-                log "LibreOffice je již nainstalován, přeskakuji..."
-            else
-                apt-get install -y libreoffice libreoffice-l10n-cs || true 
-            fi
-            ;;
-        2) 
-            if command -v desktopeditors &> /dev/null; then
-                log "OnlyOffice je již nainstalován, přeskakuji..."
-            elif [ "$SYS_ARCH" == "arm64" ]; then
-                log "Stahuji OnlyOffice (ARM64)..."
-                wget --timeout=15 --tries=3 -q --show-progress -O /tmp/onlyoffice.deb https://download.onlyoffice.com/install/desktop/editors/linux/onlyoffice-desktopeditors_arm64.deb && apt-get install -y /tmp/onlyoffice.deb || true
-            else
-                log "Stahuji OnlyOffice (AMD64)..."
-                wget --timeout=15 --tries=3 -q --show-progress -O /tmp/onlyoffice.deb https://download.onlyoffice.com/install/desktop/editors/linux/onlyoffice-desktopeditors_amd64.deb && apt-get install -y /tmp/onlyoffice.deb || true
-            fi
-    esac
+    # 2. LIKVIDACE STARÉHO SÍŤOVÉHO MOZKU
+    apt-get purge -y ifupdown || true
+    rm -rf /etc/network/interfaces.d/* || true
+    printf "auto lo\niface lo inet loopback\n" > /etc/network/interfaces
 
-    # -- NOVÝ BLOK PRO NEJNOVĚJŠÍ WINE (WINEHQ) A WINETRICKS --
-    if [ "$WINE_REQ" == "TRUE" ]; then
-        log "Zpracovávám požadavek na instalaci Wine..."
-        if [ "$SYS_ARCH" == "arm64" ]; then
-            log "UPOZORNĚNÍ: Architektura ARM64 nepodporuje nativní spouštění x86 Windows aplikací bez emulátoru. Instalaci Wine přeskakuji z důvodu kompatibility."
-        else
-            log "Povoluji 32bitovou architekturu (i386)..."
-            dpkg --add-architecture i386 || true
-            
-            log "Přidávám oficiální WineHQ repozitář..."
-            mkdir -p /etc/apt/keyrings
-            wget --timeout=10 -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key || true
-            source /etc/os-release
-            wget --timeout=10 -NP /etc/apt/sources.list.d/ "https://dl.winehq.org/wine-builds/debian/dists/${VERSION_CODENAME}/winehq-${VERSION_CODENAME}.sources" || true
-             
-            apt-get update -qq || true
-            
-            # PŘIDÁNO xvfb a cabextract (absolutní nutnost pro winetricks na pozadí)
-            log "Instaluji nejnovější verzi WineHQ Stable..."
-            apt-get install -y --install-recommends winehq-stable fonts-wine xvfb cabextract || true
-            
-            log "Stahuji absolutně nejnovější Winetricks..."
-            wget --timeout=15 -q --show-progress -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks || true
-            chmod +x /usr/local/bin/winetricks || true
+    # 3. PŘEDÁNÍ ŽEZLA NETWORKMANAGERU
+    if [ -f /etc/NetworkManager/NetworkManager.conf ]; then
+        sed -i 's/managed=false/managed=true/g' /etc/NetworkManager/NetworkManager.conf
+    fi
+    systemctl restart NetworkManager || true
 
-            log "Inicializuji Wine profil a instaluji Mono na falešném monitoru (čekejte)..."
-            # Používáme xvfb-run, aby si Wine myslel, že má grafické rozhraní, jinak Mono spadne!
-            su - "$REAL_USER" -c "xvfb-run -a env WINEDLLOVERRIDES=mscoree,mshtml= wineboot -u" || true
-            su - "$REAL_USER" -c "xvfb-run -a winetricks -q mono" || true
+    # 4. OKAMŽITÉ OBNOVENÍ PŘIPOJENÍ
+    sleep 3 # Dáme NetworkManageru chvíli na nadechnutí
+    if [ -n "$WIFI_SSID" ] && [ -n "$WIFI_PSK" ]; then
+        log "Předávám Wi-Fi síť '$WIFI_SSID' do NetworkManageru..."
+        nmcli dev wifi connect "$WIFI_SSID" password "$WIFI_PSK" >/dev/null 2>&1 || true
+    fi
 
-            # --- SYSTÉMOVÉ POJIŠTĚNÍ WINE ---
-            log "Aktivuji jádrovou podporu pro .exe a čistím cache..."
-            apt install -y binfmt-support wine-binfmt icoextract icoextract-thumbnailer || true
-            
-            /usr/sbin/update-binfmts --enable wine || true
-            systemctl restart systemd-binfmt || true
-            
-            su - "$REAL_USER" -c "xdg-mime default wine.desktop application/x-ms-dos-executable" || true
-            su - "$REAL_USER" -c "update-desktop-database ~/.local/share/applications" || true
-            
-            rm -rf "$USER_HOME/.cache/thumbnails/*" || true
+    # 5. KONTROLA PŘEŽITÍ INTERNETU (Aby nezdechlo Wine a další stahování)
+    log "Čekám na stabilizaci připojení (max 20 vteřin)..."
+    for i in {1..10}; do
+        if ping -c 1 8.8.8.8 &> /dev/null; then
+            log "Síť je ONLINE, můžeme bezpečně pokračovat."
+            break
         fi
-    fi
-
-    if [ "$RUSTDESK_REQ" == "TRUE" ]; then
-        log "Instalace RustDesku zahájena (čistá Flatpak metoda)..."
-        
-        # 1. Pojistka, že je v systému nainstalovaný samotný Flatpak
-        apt-get install -y flatpak
-        
-        # 2. Přidání oficiálního Flathub repozitáře (pokud už je, nic se nestane)
-        flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-        
-        # 3. Samotná instalace RustDesku (automaticky vyřeší správnou architekturu)
-        flatpak install flathub com.rustdesk.RustDesk -y
-        
-        log "RustDesk byl úspěšně nainstalován. Žádný démon, žádné vynucování root hesel, čistý systém."
-    fi
+        sleep 2
+    done
 }
 
 setup_auto_updates() {
@@ -937,7 +846,7 @@ lxqt_setup_shortcuts_and_menus() {
         done < "$CONTEXT_CONF"
     fi
 
-# Zástupci z actions.conf - OPRAVENÁ VERZE (Custom Filenames)
+    # Zástupci z actions.conf - OPRAVENÁ VERZE (Custom Filenames)
     local LOCAL_APPS_DIR="$USER_HOME/.local/share/applications"
     mkdir -p "$LOCAL_APPS_DIR"
     local SRC_ACTIONS="$CONTENTS_DIR/lxqt/config/actions.conf"
