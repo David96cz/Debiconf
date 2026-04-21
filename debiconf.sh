@@ -616,6 +616,9 @@ install_packages() {
             # --- SYSTÉMOVÉ POJIŠTĚNÍ WINE ---
             log "Aktivuji jádrovou podporu pro .exe a čistím cache..."
             apt install -y binfmt-support wine-binfmt icoextract icoextract-thumbnailer || true
+
+            # Zákaz vytváření zástupců a asociací souborů pro Wine
+            echo "WINEDLLOVERRIDES=\"winemenubuilder.exe=d\"" >> /etc/environment
             
             /usr/sbin/update-binfmts --enable wine || true
             systemctl restart systemd-binfmt || true
