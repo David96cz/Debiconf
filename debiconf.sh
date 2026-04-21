@@ -629,6 +629,8 @@ install_packages() {
             su - "$REAL_USER" -c "update-desktop-database ~/.local/share/applications" || true
             
             rm -rf "$USER_HOME/.cache/thumbnails/*" || true
+
+            
         fi
     fi
 

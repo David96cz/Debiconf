@@ -148,19 +148,20 @@ class AppUninstaller(QWidget):
 
         # 2. NAČTENÍ WINDOWS (WINE) APLIKACÍ PŘÍMO Z REGISTRŮ!
         try:
-            # Zavoláme wine, ať nám tajně vyblije seznam všeho, co se dá odinstalovat
-            wine_list = subprocess.run(["wine", "uninstaller", "--list"], capture_output=True, text=True, env=os.environ)
+            # Přidáme WINEDEBUG="-all", aby Wine nevyhazovalo ladící hlášky, které rozbijí seznam
+            env = os.environ.copy()
+            env["WINEDEBUG"] = "-all"
+            
+            wine_list = subprocess.run(["wine", "uninstaller", "--list"], capture_output=True, text=True, env=env)
             if wine_list.returncode == 0:
                 for line in wine_list.stdout.splitlines():
                     if "|||" in line:
                         parts = line.split("|||")
-                        app_uuid = parts[0].strip() # To je to ID, co uninstaller potřebuje
+                        app_uuid = parts[0].strip() 
                         app_name = parts[1].strip()
                         
-                        # Přidáme to do seznamu s jasným popiskem
                         display_name = f"{app_name} (Windows Program)"
                         if display_name not in apps_data:
-                            # Uložíme UUID jako 'filepath', is_wine=True to pak pošle správnému programu
                             apps_data[display_name] = {"filepath": app_uuid, "filename": "wine_app", "icon": "wine", "is_wine": True}
         except Exception as e:
             print(f"Chyba při čtení Wine registrů: {e}")
