@@ -630,34 +630,50 @@ install_packages() {
             
             rm -rf "$USER_HOME/.cache/thumbnails/*" || true
 
-            log "Upravuji Wine strážce, aby hlídal i pozice ikon na ploše..."
+            log "Instaluji neprůstřelný Wine strážce (ochrana rozlišení a ikon)..."
 
             local WINE_WRAPPER="/usr/local/bin/wine"
             
-            # 1. Záhlaví a spuštění Wine (záznam původního stavu)
+            # 1. Záhlaví a definice cest
             echo '#!/bin/bash' > "$WINE_WRAPPER"
             echo 'CONF_FILE="$HOME/.config/pcmanfm-qt/lxqt/desktop-items.conf"' >> "$WINE_WRAPPER"
-            
-            # 2. Záloha pozic před spuštěním (pokud soubor existuje)
-            echo '[ -f "$CONF_FILE" ] && cp "$CONF_FILE" "${CONF_FILE}.bak"' >> "$WINE_WRAPPER"
-            
+            echo '' >> "$WINE_WRAPPER"
+
+            # 2. Záloha a ZAMKNUTÍ (Read-only), aby PCManFM-Qt nemohl ikony rozházet
+            echo '# Záloha a zamknutí pozic před spuštěním' >> "$WINE_WRAPPER"
+            echo 'if [ -f "$CONF_FILE" ]; then' >> "$WINE_WRAPPER"
+            echo '    cp "$CONF_FILE" "${CONF_FILE}.stable"' >> "$WINE_WRAPPER"
+            echo '    chmod 444 "$CONF_FILE"' >> "$WINE_WRAPPER"
+            echo '    sync' >> "$WINE_WRAPPER"
+            echo 'fi' >> "$WINE_WRAPPER"
+            echo '' >> "$WINE_WRAPPER"
+
             # 3. Spuštění samotného Wine
             echo '/usr/bin/wine "$@"' >> "$WINE_WRAPPER"
             echo 'EXIT_CODE=$?' >> "$WINE_WRAPPER"
-            
+            echo '' >> "$WINE_WRAPPER"
+
             # 4. Návrat rozlišení monitoru
             echo 'xrandr -s 0 >/dev/null 2>&1 || true' >> "$WINE_WRAPPER"
-            
-            # 5. Obnova ikon (Trik: nejdřív vypnout plochu, pak vrátit konfig, pak zapnout)
-            echo 'if [ -f "${CONF_FILE}.bak" ]; then' >> "$WINE_WRAPPER"
-            echo '    killall pcmanfm-qt 2>/dev/null' >> "$WINE_WRAPPER"
+            echo 'sleep 1' >> "$WINE_WRAPPER"
+            echo '' >> "$WINE_WRAPPER"
+
+            # 5. Obnova ikon (Tvrdý reset plochy a odemknutí souboru)
+            echo 'if [ -f "${CONF_FILE}.stable" ]; then' >> "$WINE_WRAPPER"
+            echo '    # Odstřelení plochy natvrdo, aby si neuložila bordel z paměti' >> "$WINE_WRAPPER"
+            echo '    killall -9 pcmanfm-qt 2>/dev/null' >> "$WINE_WRAPPER"
             echo '    sleep 1' >> "$WINE_WRAPPER"
-            echo '    mv "${CONF_FILE}.bak" "$CONF_FILE"' >> "$WINE_WRAPPER"
+            echo '    # Odemknutí, vrácení stabilní verze a restart' >> "$WINE_WRAPPER"
+            echo '    chmod 644 "$CONF_FILE"' >> "$WINE_WRAPPER"
+            echo '    mv "${CONF_FILE}.stable" "$CONF_FILE"' >> "$WINE_WRAPPER"
+            echo '    sync' >> "$WINE_WRAPPER"
             echo '    (pcmanfm-qt --desktop >/dev/null 2>&1 & disown)' >> "$WINE_WRAPPER"
             echo 'fi' >> "$WINE_WRAPPER"
-            
+            echo '' >> "$WINE_WRAPPER"
+
             echo 'exit $EXIT_CODE' >> "$WINE_WRAPPER"
-            
+
+            # Nastavení práv, aby byl wrapper spustitelný
             chmod +x "$WINE_WRAPPER"
         fi
     fi
