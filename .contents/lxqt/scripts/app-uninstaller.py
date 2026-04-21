@@ -2,13 +2,54 @@
 import sys
 import os
 import subprocess
-import glob      # PŘIDÁNO
-import shutil    # PŘIDÁNO
+import glob
+import shutil
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, 
                              QLineEdit, QPushButton, QMessageBox, QListWidget, 
                              QListWidgetItem, QLabel)
 from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal
 from PyQt5.QtGui import QIcon
+
+# --- POMOCNÁ FUNKCE PRO EXTRAKCI IKON Z WINDOWS EXE SOUBORŮ ---
+# Musí být ZDE nahoře, MIMO všechny třídy!
+def extract_wine_icon(win_path, app_name):
+    if not win_path: return None
+    # Odstraní uvozovky a index ikony (např. C:\hra.exe,0)
+    win_path = win_path.split(',')[0].strip('"\'') 
+    if not win_path.lower().startswith("c:\\"): return None
+    
+    # Převod Windows cesty na Linuxovou (C:\ -> ~/.wine/drive_c/)
+    linux_path = os.path.expanduser("~/.wine/drive_c/" + win_path[3:].replace("\\", "/"))
+    if not os.path.exists(linux_path): return None
+
+    # PyQt nativně podporuje .ico soubory
+    if linux_path.lower().endswith(".ico"): return linux_path
+
+    # Cache složka, aby to při dalším spuštění nelagovalo
+    cache_dir = os.path.expanduser("~/.cache/wine-icons")
+    os.makedirs(cache_dir, exist_ok=True)
+    safe_name = "".join(c for c in app_name if c.isalnum()).lower()
+    cached_icon = os.path.join(cache_dir, f"{safe_name}.png")
+    
+    if os.path.exists(cached_icon): return cached_icon
+
+    # Vytažení ikony z EXE souboru
+    if linux_path.lower().endswith(".exe") and shutil.which("wrestool"):
+        tmp_ico = f"/tmp/{safe_name}.ico"
+        try:
+            with open(tmp_ico, "wb") as f:
+                subprocess.run(["wrestool", "-x", "-t", "14", linux_path], stdout=f, stderr=subprocess.DEVNULL)
+            if os.path.exists(tmp_ico) and os.path.getsize(tmp_ico) > 0:
+                out_dir = f"/tmp/{safe_name}_png"
+                os.makedirs(out_dir, exist_ok=True)
+                subprocess.run(["icotool", "-x", tmp_ico, "-o", out_dir], stderr=subprocess.DEVNULL)
+                pngs = glob.glob(f"{out_dir}/*.png")
+                if pngs:
+                    best = max(pngs, key=os.path.getsize) # Vybere ikonu s nejvyšším rozlišením
+                    shutil.copy(best, cached_icon)
+                    return cached_icon
+        except: pass
+    return None
 
 # --- VLÁKNO PRO ODINSTALACI NA POZADÍ ---
 class UninstallWorker(QThread):
@@ -23,27 +64,23 @@ class UninstallWorker(QThread):
 
     def run(self):
         if self.is_wine:
-            # 1. Spustíme nativní Windows odinstalátor
             subprocess.run(["wine", "uninstaller", "--remove", self.filepath])
+            subprocess.run(["wineserver", "-w"]) # Uloží registry
             
-            # 2. DONUTÍME WINE OKAMŽITĚ ZAPSAT ZMĚNY NA DISK!
-            subprocess.run(["wineserver", "-w"])
-            
-            # 3. Zkontrolujeme pravdu: Zmizel ten klíč z registrů?
+            # Kontrola smazání
             still_exists = False
             for reg_file in ["system.reg", "user.reg"]:
                 reg_path = os.path.expanduser(f"~/.wine/{reg_file}")
                 if os.path.exists(reg_path):
-                    with open(reg_path, 'r', errors='ignore') as f:
-                        if self.filepath in f.read():
-                            still_exists = True
-                            break
+                    try:
+                        with open(reg_path, 'r', errors='ignore') as f:
+                            if self.filepath in f.read():
+                                still_exists = True
+                                break
+                    except: pass
             
-            # Návratové kódy: 0 = úspěch, 2 = zrušeno uživatelem
-            if still_exists:
-                self.finished.emit(2, self.filepath, self.app_name, self.filename, True)
-            else:
-                self.finished.emit(0, self.filepath, self.app_name, self.filename, True)
+            if still_exists: self.finished.emit(2, self.filepath, self.app_name, self.filename, True)
+            else: self.finished.emit(0, self.filepath, self.app_name, self.filename, True)
             
         elif self.filepath.startswith("/usr/share/applications"):
             dpkg_result = subprocess.run(["dpkg", "-S", self.filepath], capture_output=True, text=True)
@@ -95,10 +132,7 @@ class AppUninstaller(QWidget):
             QListWidget::item:last { border-bottom: none; }
             QListWidget::item:hover { background-color: #e3f2fd; }
             QListWidget::item:selected { background-color: #2a7fca; color: white; border-radius: 3px; }
-            
-            QPushButton#btnUninstall {
-                background-color: #d32f2f; color: white; padding: 15px; font-weight: bold; border-radius: 5px; font-size: 12pt;
-            }
+            QPushButton#btnUninstall { background-color: #d32f2f; color: white; padding: 15px; font-weight: bold; border-radius: 5px; font-size: 12pt; }
             QPushButton#btnUninstall:hover { background-color: #b71c1c; }
             QPushButton#btnUninstall:disabled { background-color: #9e9e9e; color: #e0e0e0; }
         """)
@@ -133,7 +167,7 @@ class AppUninstaller(QWidget):
         self.app_list.clear()
         apps_data = {}
 
-        # 1. NAČTENÍ LINUXOVÝCH APLIKACÍ (Jako předtím)
+        # 1. NAČTENÍ LINUXOVÝCH APLIKACÍ
         dirs_to_scan = ["/usr/share/applications", os.path.expanduser("~/.local/share/applications")]
         for directory in dirs_to_scan:
             if not os.path.exists(directory): continue
@@ -162,65 +196,39 @@ class AppUninstaller(QWidget):
                         apps_data[name] = {"filepath": filepath, "filename": filename, "icon": icon_name, "is_wine": False}
                 except: continue
 
-       # 2. RYCHLÉ A SPOLEHLIVÉ NAČTENÍ Z WINE REGISTRŮ BEZ VOLÁNÍ WINE
+        # 2. NAČTENÍ WINE APLIKACÍ
         wine_apps = {}
         for reg_file in ["system.reg", "user.reg"]:
             reg_path = os.path.expanduser(f"~/.wine/{reg_file}")
             if not os.path.exists(reg_path): continue
-
             try:
-                with open(reg_path, 'r', errors='ignore') as f:
-                    lines = f.readlines()
-
-                current_key = None
-                display_name = None
-                display_icon = None
-
+                with open(reg_path, 'r', errors='ignore') as f: lines = f.readlines()
+                current_key, display_name, display_icon = None, None, None
                 for line in lines:
                     line = line.strip()
-                    
                     if line.startswith("[") and "\\Uninstall\\" in line:
-                        # Uložení předchozí nalezéné hry, než přejdeme na další klíč
-                        if current_key and display_name:
-                            if "Wine" not in display_name and "Gecko" not in display_name and "Mono" not in display_name:
-                                wine_apps[display_name] = {"uuid": current_key, "icon": display_icon}
-                        
+                        if current_key and display_name and "Wine" not in display_name and "Gecko" not in display_name and "Mono" not in display_name:
+                            wine_apps[display_name] = {"uuid": current_key, "icon": display_icon}
                         raw_key = line.split("\\")[-1]
                         current_key = raw_key.split("]")[0]
-                        display_name = None
-                        display_icon = None
-                        
+                        display_name, display_icon = None, None
                     elif line.startswith("["):
-                        if current_key and display_name:
-                            if "Wine" not in display_name and "Gecko" not in display_name and "Mono" not in display_name:
-                                wine_apps[display_name] = {"uuid": current_key, "icon": display_icon}
-                        current_key = None
-                        display_name = None
-                        display_icon = None
-                        
+                        if current_key and display_name and "Wine" not in display_name and "Gecko" not in display_name and "Mono" not in display_name:
+                            wine_apps[display_name] = {"uuid": current_key, "icon": display_icon}
+                        current_key, display_name, display_icon = None, None, None
                     elif current_key:
-                        if line.startswith('"DisplayName"='):
-                            display_name = line.split("=", 1)[1].strip('"')
-                        elif line.startswith('"DisplayIcon"='):
-                            display_icon = line.split("=", 1)[1].strip('"')
+                        if line.startswith('"DisplayName"='): display_name = line.split("=", 1)[1].strip('"')
+                        elif line.startswith('"DisplayIcon"='): display_icon = line.split("=", 1)[1].strip('"')
 
-                # Zachycení úplně poslední hry v souboru
-                if current_key and display_name:
-                    if "Wine" not in display_name and "Gecko" not in display_name and "Mono" not in display_name:
-                        wine_apps[display_name] = {"uuid": current_key, "icon": display_icon}
-            except Exception:
-                pass
+                if current_key and display_name and "Wine" not in display_name and "Gecko" not in display_name and "Mono" not in display_name:
+                    wine_apps[display_name] = {"uuid": current_key, "icon": display_icon}
+            except: pass
 
-        # Naplnění do hlavní tabulky pro vykreslení
         for app_name, data in wine_apps.items():
-            display_name = f"{app_name} (Windows Program)"
+            display_name = f"{app_name} (Windows)"
             if display_name not in apps_data:
-                # TADY SE DĚJE TA MAGIE S IKONOU!
                 real_icon = extract_wine_icon(data["icon"], app_name) or "wine"
                 apps_data[display_name] = {"filepath": data["uuid"], "filename": "wine_app", "icon": real_icon, "is_wine": True}
-            display_name = f"{app_name} (Windows Program)"
-            if display_name not in apps_data:
-                apps_data[display_name] = {"filepath": app_uuid, "filename": "wine_app", "icon": "wine", "is_wine": True}
 
         # 3. VYKRESLENÍ VŠEHO DO JEDNOHO SEZNAMU
         for name in sorted(apps_data.keys()):
@@ -230,15 +238,11 @@ class AppUninstaller(QWidget):
             icon_str = item_data["icon"]
             icon = QIcon()
             
-            # Nastavení ikon
-            if item_data["is_wine"]:
-                # Pro Windows hry to natvrdo nastaví Wine ikonu
+            if item_data["is_wine"] and icon_str == "wine":
                 icon = QIcon.fromTheme("wine")
                 if icon.isNull(): icon = QIcon.fromTheme("application-x-ms-dos-executable")
             else:
-                # Běžné linuxové ikony
-                if os.path.isabs(icon_str) and os.path.exists(icon_str):
-                    icon = QIcon(icon_str)
+                if os.path.isabs(icon_str) and os.path.exists(icon_str): icon = QIcon(icon_str)
                 else:
                     icon_base = icon_str.rsplit('.', 1)[0] if icon_str.lower().endswith(('.png', '.svg', '.xpm', '.ico')) else icon_str
                     icon = QIcon.fromTheme(icon_base)
@@ -251,12 +255,9 @@ class AppUninstaller(QWidget):
             item.setIcon(icon)
             item.setData(Qt.UserRole, item_data["filepath"])
             item.setData(Qt.UserRole + 1, item_data["filename"])
-            item.setData(Qt.UserRole + 2, item_data["is_wine"]) # Uložení informace, že jde o hru
+            item.setData(Qt.UserRole + 2, item_data["is_wine"]) 
             
-            # Wine aplikace zbarvíme trochu odlišně (volitelné, pro lepší přehlednost)
-            if item_data["is_wine"]:
-                item.setForeground(Qt.darkMagenta)
-                
+            if item_data["is_wine"]: item.setForeground(Qt.darkMagenta)
             self.app_list.addItem(item)
 
     def filter_apps(self, text):
@@ -296,34 +297,15 @@ class AppUninstaller(QWidget):
         self.app_list.setEnabled(True)
 
         if returncode == 0:
-            if not is_wine:
-                self.post_uninstall_cleanup(filename)
+            if not is_wine: self.post_uninstall_cleanup(filename)
             QMessageBox.information(self, "Hotovo", f"Program {app_name} byl úspěšně odstraněn.")
             self.search_bar.clear()
         elif returncode == 2:
-            # Tohle zachytí ten moment, kdy to uživatel v okně Wine zruší
             QMessageBox.information(self, "Zrušeno", f"Odinstalace programu {app_name} byla přerušena.")
         else:
-            if not is_wine:
-                QMessageBox.warning(self, "Zrušeno", "Odinstalace byla zrušena nebo se nezdařila.")
+            if not is_wine: QMessageBox.warning(self, "Zrušeno", "Odinstalace byla zrušena nebo se nezdařila.")
         
-        # Načteme seznam znova v KAŽDÉM PŘÍPADĚ (teď už i pro Wine bez problému)
         self.load_apps()
-        self.btn_uninstall.setEnabled(True)
-        self.btn_uninstall.setText('Odinstalovat vybraný program')
-        self.app_list.setEnabled(True)
-
-        if returncode == 0:
-            if not is_wine:
-                self.post_uninstall_cleanup(filename)
-            QMessageBox.information(self, "Hotovo", f"Program {app_name} byl úspěšně odstraněn.")
-            self.load_apps()
-            self.search_bar.clear()
-        else:
-            # U wine to nevyhodí chybu, pokud to uživatel prostě jen zrušil v tom Windows okně
-            if not is_wine:
-                QMessageBox.warning(self, "Zrušeno", "Odinstalace byla zrušena nebo se nezdařila.")
-            self.load_apps()
 
     def post_uninstall_cleanup(self, filename):
         local_path = os.path.expanduser(f"~/.local/share/applications/{filename}")
@@ -332,46 +314,6 @@ class AppUninstaller(QWidget):
             except: pass
         subprocess.run(["update-desktop-database", os.path.expanduser("~/.local/share/applications")], capture_output=True)
 
-    # --- POMOCNÁ FUNKCE PRO EXTRAKCI IKON Z WINDOWS EXE SOUBORŮ ---
-    def extract_wine_icon(win_path, app_name):
-        if not win_path: return None
-        # Odstraní uvozovky a index ikony (např. C:\hra.exe,0)
-        win_path = win_path.split(',')[0].strip('"\'') 
-        if not win_path.lower().startswith("c:\\"): return None
-        
-        # Převod Windows cesty na Linuxovou (C:\ -> ~/.wine/drive_c/)
-        linux_path = os.path.expanduser("~/.wine/drive_c/" + win_path[3:].replace("\\", "/"))
-        if not os.path.exists(linux_path): return None
-
-        # PyQt nativně podporuje .ico soubory
-        if linux_path.lower().endswith(".ico"): return linux_path
-
-        # Cache složka, aby to při dalším spuštění nelagovalo
-        cache_dir = os.path.expanduser("~/.cache/wine-icons")
-        os.makedirs(cache_dir, exist_ok=True)
-        safe_name = "".join(c for c in app_name if c.isalnum()).lower()
-        cached_icon = os.path.join(cache_dir, f"{safe_name}.png")
-        
-        if os.path.exists(cached_icon): return cached_icon
-
-        # Vytažení ikony z EXE souboru
-        if linux_path.lower().endswith(".exe") and shutil.which("wrestool"):
-            tmp_ico = f"/tmp/{safe_name}.ico"
-            try:
-                with open(tmp_ico, "wb") as f:
-                    subprocess.run(["wrestool", "-x", "-t", "14", linux_path], stdout=f, stderr=subprocess.DEVNULL)
-                if os.path.exists(tmp_ico) and os.path.getsize(tmp_ico) > 0:
-                    out_dir = f"/tmp/{safe_name}_png"
-                    os.makedirs(out_dir, exist_ok=True)
-                    subprocess.run(["icotool", "-x", tmp_ico, "-o", out_dir], stderr=subprocess.DEVNULL)
-                    pngs = glob.glob(f"{out_dir}/*.png")
-                    if pngs:
-                        best = max(pngs, key=os.path.getsize) # Vybere ikonu s nejvyšším rozlišením
-                        shutil.copy(best, cached_icon)
-                        return cached_icon
-            except: pass
-        return None
-    
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     QIcon.setThemeName("Papirus")
