@@ -320,13 +320,15 @@ lxqt_setup_apps_and_defaults() {
             4) BROWSER_DESKTOP="firefox-esr.desktop"; [ -x "/usr/bin/firefox" ] && BROWSER_BIN="/usr/bin/firefox" || BROWSER_BIN="/usr/bin/firefox-esr" ;;
         esac
 
-        # Vypnutí otravného Keyringu pro Chromium / Chrome
-        if [ "$BROWSER_DESKTOP" = "google-chrome.desktop" ]; then
-            sed -i 's/Exec=\/usr\/bin\/google-chrome-stable %U/Exec=\/usr\/bin\/google-chrome-stable --password-store=basic %U/g' /usr/share/applications/google-chrome.desktop
+        # Vypnutí otravného Keyringu a vynucení mlčení o výchozím prohlížeči (Aplikováno na LOKÁLNÍ soubor)
+        local LOCAL_APPS="$USER_HOME/.local/share/applications"
+        
+        if [ "$BROWSER_DESKTOP" = "google-chrome.desktop" ] && [ -f "$LOCAL_APPS/google-chrome.desktop" ]; then
+            sed -i 's/google-chrome-stable %U/google-chrome-stable --password-store=basic --no-default-browser-check %U/g' "$LOCAL_APPS/google-chrome.desktop" || true
         fi
 
-        if [ "$BROWSER_DESKTOP" = "chromium.desktop" ]; then
-            sed -i 's/Exec=chromium %U/Exec=chromium --password-store=basic %U/g' /usr/share/applications/chromium.desktop
+        if [ "$BROWSER_DESKTOP" = "chromium.desktop" ] && [ -f "$LOCAL_APPS/chromium.desktop" ]; then
+            sed -i 's/chromium %U/chromium --password-store=basic --no-default-browser-check %U/g' "$LOCAL_APPS/chromium.desktop" || true
         fi
 
         log "Nastavuji $BROWSER_DESKTOP jako systémový default a potlačuji hlášky..."
