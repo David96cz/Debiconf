@@ -57,6 +57,7 @@ class ShortcutApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Správce Zástupců")
         self.resize(850, 600)
+        self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
         self.editing_path = None
         
         main_widget = QWidget()
@@ -171,7 +172,7 @@ class ShortcutApp(QMainWindow):
         
         self.table.itemSelectionChanged.connect(self.check_row_selection)
         self.delete_btn.clicked.connect(self.delete_shortcut)
-        self.tabs.addTab(tab, "Správce zobrazení")
+        self.tabs.addTab(tab, "Úprava zástupců")
         self.load_applications()
 
     def load_applications(self):
