@@ -524,7 +524,7 @@ install_packages() {
                 fi
             else
                 log "Stahuji Google Chrome..."
-                wget -q --show-progress -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && apt-get install -y /tmp/chrome.deb || true 
+                wget --timeout=15 --tries=3 -q --show-progress -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && apt-get install -y /tmp/chrome.deb || log "CHYBA: Server Google neodpovídá, Chrome přeskočen." 
             fi
             ;;
         2) 
@@ -564,12 +564,11 @@ install_packages() {
                 log "OnlyOffice je již nainstalován, přeskakuji..."
             elif [ "$SYS_ARCH" == "arm64" ]; then
                 log "Stahuji OnlyOffice (ARM64)..."
-                wget -q --show-progress -O /tmp/onlyoffice.deb https://download.onlyoffice.com/install/desktop/editors/linux/onlyoffice-desktopeditors_arm64.deb && apt-get install -y /tmp/onlyoffice.deb || true
+                wget --timeout=15 --tries=3 -q --show-progress -O /tmp/onlyoffice.deb https://download.onlyoffice.com/install/desktop/editors/linux/onlyoffice-desktopeditors_arm64.deb && apt-get install -y /tmp/onlyoffice.deb || true
             else
                 log "Stahuji OnlyOffice (AMD64)..."
-                wget -q --show-progress -O /tmp/onlyoffice.deb https://download.onlyoffice.com/install/desktop/editors/linux/onlyoffice-desktopeditors_amd64.deb && apt-get install -y /tmp/onlyoffice.deb || true
+                wget --timeout=15 --tries=3 -q --show-progress -O /tmp/onlyoffice.deb https://download.onlyoffice.com/install/desktop/editors/linux/onlyoffice-desktopeditors_amd64.deb && apt-get install -y /tmp/onlyoffice.deb || true
             fi
-            ;;
     esac
 
     # -- NOVÝ BLOK PRO NEJNOVĚJŠÍ WINE (WINEHQ) A WINETRICKS --
@@ -583,11 +582,10 @@ install_packages() {
             
             log "Přidávám oficiální WineHQ repozitář..."
             mkdir -p /etc/apt/keyrings
-            wget -q --show-progress -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key || true
-            
+            wget --timeout=10 -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key || true
             source /etc/os-release
-            wget -q --show-progress -NP /etc/apt/sources.list.d/ "https://dl.winehq.org/wine-builds/debian/dists/${VERSION_CODENAME}/winehq-${VERSION_CODENAME}.sources" || true
-            
+            wget --timeout=10 -NP /etc/apt/sources.list.d/ "https://dl.winehq.org/wine-builds/debian/dists/${VERSION_CODENAME}/winehq-${VERSION_CODENAME}.sources" || true
+             
             apt-get update -qq || true
             
             # PŘIDÁNO xvfb a cabextract (absolutní nutnost pro winetricks na pozadí)
@@ -595,7 +593,7 @@ install_packages() {
             apt-get install -y --install-recommends winehq-stable fonts-wine xvfb cabextract || true
             
             log "Stahuji absolutně nejnovější Winetricks..."
-            wget -q --show-progress -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks || true
+            wget --timeout=15 -q --show-progress -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks || true
             chmod +x /usr/local/bin/winetricks || true
 
             log "Inicializuji Wine profil a instaluji Mono na falešném monitoru (čekejte)..."
