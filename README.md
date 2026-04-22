@@ -15,6 +15,7 @@ ARM64: http://debian-cd.mirror.web4u.cz/13.4.0/arm64/iso-cd/debian-13.4.0-arm64-
 --------------------------------------------------
 
 Po dokončení čisté netinst instalace bez prostředí:
+
 *V případě NASTAVENÍ root hesla během instalace Debianu* 
 
   1) su -
