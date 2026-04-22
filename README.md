@@ -15,6 +15,7 @@ ARM64: http://debian-cd.mirror.web4u.cz/13.4.0/arm64/iso-cd/debian-13.4.0-arm64-
 --------------------------------------------------
 
 Po dokončení čisté netinst instalace bez prostředí:
+*V případě NASTAVENÍ root hesla během instalace Debianu* 
 
   1) su -
   
@@ -25,6 +26,17 @@ Po dokončení čisté netinst instalace bez prostředí:
   4) cd debiconf
   
   5) bash debiconf.sh
+
+
+*V případě VYNECHÁNÍ root hesla během instalace Debianu* 
+  
+  1) sudo apt install git -y
+  
+  2) git clone https://github.com/David96cz/debiconf
+  
+  3) cd debiconf
+  
+  4) sudo bash debiconf.sh
 
 ---------------------------------------------------
 
