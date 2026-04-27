@@ -470,6 +470,8 @@ lxqt_setup_apps_and_defaults() {
 }
 
 prepare_system() {
+    log "Vypínám otravný systémový PC speaker (pípání)..."
+    echo -e "blacklist pcspkr\nblacklist snd_pcsp" > /etc/modprobe.d/nobeep.conf
     log "Základní příprava systému a záchrana Wi-Fi sítě..."
     
     # Záchrana Wi-Fi z instalátoru
@@ -1782,6 +1784,15 @@ setup_display_manager() {
         # Vynucení výchozí relace na Plasma Wayland pro manuální přihlášení
         echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/50-session.conf
         echo "user-session=plasmawayland" >> /etc/lightdm/lightdm.conf.d/50-session.conf
+
+        # Vypnutí načítací obrazovky (Splash screen)
+        local DISABLE_SPLASH=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^DISABLE_SPLASH_SCREEN=" | cut -d= -f2 | tr -d '\r')
+        
+        if [ "$DISABLE_SPLASH" == "true" ]; then
+            log "Vypínám načítací obrazovku (Splash Screen) pro rychlý start..."
+            run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Engine none 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Engine none 2>/dev/null"
+            run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Theme None 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Theme None 2>/dev/null"
+        fi
     else
         log "Aplikuji výchozí modrý motiv pro LightDM (LXQt)..."
         echo "[greeter]" > "$GREETER_CONF"
