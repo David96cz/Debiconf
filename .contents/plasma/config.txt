@@ -7,9 +7,6 @@ SET_EMPTY_SESSION=true
 SHOW_SYSTEM_ICONS=true
 
 [CORE_PACKAGES]
-...
-
-[CORE_PACKAGES]
 plasma-desktop lightdm-gtk-greeter konsole dolphin kio-extras plasma-nm systemsettings kscreen kmenuedit powerdevil plasma-pa bluedevil kinfocenter pipewire pipewire-audio pipewire-pulse wireplumber plasma-discover kde-spectacle wl-clipboard breeze-gtk-theme kde-config-gtk-style polkit-kde-agent-1 gwenview okular xdg-desktop-portal xdg-desktop-portal-kde 
 
 [EXTRA_PACKAGES]
