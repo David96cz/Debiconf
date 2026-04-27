@@ -883,7 +883,7 @@ lxqt_setup_system_integrations() {
     echo 'inotifywait -m -q -e create,moved_to "$DESKTOP_DIR" --format "%w%f" | while read -r filepath; do' >> "$TRUST_SCRIPT"
     echo '    if [[ "$filepath" == *.desktop ]]; then' >> "$TRUST_SCRIPT"
     echo '        # Krátká pauza, aby se soubor stihl fyzicky zapsat na disk' >> "$TRUST_SCRIPT"
-    echo '        sleep 1' >> "$TRUST_SCRIPT"
+    echo '        sleep 0.5' >> "$TRUST_SCRIPT"
     echo '        # Tvůj ověřený příkaz pro LXQt trust' >> "$TRUST_SCRIPT"
     echo '        gio set "$filepath" -t string metadata::trust true 2>/dev/null' >> "$TRUST_SCRIPT"
     echo '        chmod +x "$filepath" 2>/dev/null' >> "$TRUST_SCRIPT"
@@ -1588,6 +1588,59 @@ configure_plasma() {
     apt-get purge -y plasma-discover-notifier || true
 
     chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" || true
+
+    # ==========================================================
+    # PARSOVÁNÍ CONFIGU A APLIKACE DYNAMICKÝCH PRAVIDEL
+    # ==========================================================
+    local PLASMA_CONF="$CONTENTS_DIR/plasma/config.txt"
+    
+    if [ -f "$PLASMA_CONF" ]; then
+        log "Čtu dodatečnou konfiguraci z $PLASMA_CONF..."
+        
+        # Vytáhnutí hodnot pomocí sed a grep
+        local SET_BALOO_INDEXING=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^SET_BALOO_INDEXING=" | cut -d= -f2 | tr -d '\r')
+        local BALOO_FOLDERS=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^BALOO_FOLDERS=" | cut -d= -f2 | tr -d '\r' | sed "s/\$REAL_USER/$REAL_USER/g")
+        local START_MENU_ICON=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^START_MENU_ICON=" | cut -d= -f2 | tr -d '\r')
+        local REVERSE_TOUCHPAD=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^REVERSE_TOUCHPAD=" | cut -d= -f2 | tr -d '\r')
+
+        # 1. NASTAVENÍ TOUCHPADU (Globální X11 pravidlo)
+        if [ "$REVERSE_TOUCHPAD" == "true" ]; then
+            log "Nastavuji přirozené (obrácené) posouvání pro touchpady..."
+            mkdir -p /etc/X11/xorg.conf.d
+            echo 'Section "InputClass"' > /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
+            echo '    Identifier "libinput touchpad catchall"' >> /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
+            echo '    MatchIsTouchpad "on"' >> /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
+            echo '    MatchDevicePath "/dev/input/event*"' >> /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
+            echo '    Driver "libinput"' >> /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
+            echo '    Option "NaturalScrolling" "true"' >> /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
+            echo 'EndSection' >> /etc/X11/xorg.conf.d/40-libinput-touchpad.conf
+        fi
+
+        # 2. NASTAVENÍ INDEXOVÁNÍ (Baloo)
+        if [ "$SET_BALOO_INDEXING" == "true" ]; then
+            log "Konfiguruji indexování souborů (Baloo)..."
+            # KWriteConfig bezpečně vytvoří/upraví soubor i když Plasma neběží
+            run_as_user "kwriteconfig6 --file baloofilerc --group 'Basic' --key 'Indexing-Enabled' true 2>/dev/null || kwriteconfig5 --file baloofilerc --group 'Basic' --key 'Indexing-Enabled' true 2>/dev/null"
+            run_as_user "kwriteconfig6 --file baloofilerc --group 'General' --key 'folders' \"$BALOO_FOLDERS\" 2>/dev/null || kwriteconfig5 --file baloofilerc --group 'General' --key 'folders' \"$BALOO_FOLDERS\" 2>/dev/null"
+            run_as_user "kwriteconfig6 --file baloofilerc --group 'General' --key 'exclude folders' \"\" 2>/dev/null || kwriteconfig5 --file baloofilerc --group 'General' --key 'exclude folders' \"\" 2>/dev/null"
+        fi
+
+        # 3. ZMĚNA IKONY START MENU (Tvrdý zásah do systémové šablony Plasmy)
+        if [ -n "$START_MENU_ICON" ]; then
+            log "Zapisuji ikonu menu natvrdo do systémových XML šablon Plasmy..."
+            
+            # Projdeme všechny tři typy menu, které Plasma umí (Kickoff, Kicker, Dash)
+            for plasmoid in kickoff kicker dash; do
+                local XML_FILE="/usr/share/plasma/plasmoids/org.kde.plasma.$plasmoid/contents/config/main.xml"
+                
+                if [ -f "$XML_FILE" ]; then
+                    # Najde blok definující ikonu a přepíše jeho <default> hodnotu na tvou z configu
+                    sed -i "/<entry name=\"icon\"/,/<\/entry>/ s|<default>.*</default>|<default>$START_MENU_ICON</default>|" "$XML_FILE" || true
+                fi
+            done
+        fi
+    fi
+    
 }
 
 # === 4. SYSTÉMOVÉ SLUŽBY A BOOT ===
