@@ -1589,7 +1589,7 @@ configure_plasma() {
 
     chown -R "$REAL_USER:$REAL_USER" "$USER_HOME/.config" || true
 
-    # ==========================================================
+        # ==========================================================
     # PARSOVÁNÍ CONFIGU A APLIKACE DYNAMICKÝCH PRAVIDEL
     # ==========================================================
     local PLASMA_CONF="$CONTENTS_DIR/plasma/config.txt"
@@ -1597,17 +1597,23 @@ configure_plasma() {
     if [ -f "$PLASMA_CONF" ]; then
         log "Čtu dodatečnou konfiguraci z $PLASMA_CONF..."
         
-        # Vytáhnutí hodnot z configu (ošetřeno proti Windows koncům řádků)
         local SET_BALOO_INDEXING=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^SET_BALOO_INDEXING=" | cut -d= -f2 | tr -d '\r')
         local BALOO_FOLDERS=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^BALOO_FOLDERS=" | cut -d= -f2 | tr -d '\r' | sed "s/\$REAL_USER/$REAL_USER/g")
         local START_MENU_ICON=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^START_MENU_ICON=" | cut -d= -f2 | tr -d '\r')
         local REVERSE_TOUCHPAD=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^REVERSE_TOUCHPAD=" | cut -d= -f2 | tr -d '\r')
 
-        # 1. NASTAVENÍ TOUCHPADU (Nativní KWriteConfig pro Wayland/ThinkPad)
-        log "Detekuji touchpady a propisuji nastavení (Natural Scroll, ClickMethod, TapToClick)..."
+        # 1. NASTAVENÍ TOUCHPADU (Bez roury, přes dočasný skript - imunní proti sežrání stdin)
+        log "Detekuji touchpady a generuji konfigurační skript..."
         
-        # Prohledáme připojená zařízení a najdeme cokoliv, co vypadá jako touchpad/trackpoint
-        awk -v RS='' 'tolower($0) ~ /touch|track|synaptics|alps|elan|focal|i2c hid/' /proc/bus/input/devices | while read -r block; do
+        # Uložíme si seznam do proměnné (vyhneme se ztrátě dat)
+        local DEVICES_LIST=$(awk -v RS='' 'tolower($0) ~ /touch|track|synaptics|alps|elan|focal|i2c hid/' /proc/bus/input/devices)
+        local TP_SCRIPT="$USER_HOME/setup_touchpad_tmp.sh"
+        echo "#!/bin/bash" > "$TP_SCRIPT"
+        
+        # Přečteme seznam z proměnné a vygenerujeme dávkový soubor
+        while read -r block; do
+            [ -z "$block" ] && continue
+            
             local VENDOR_HEX=$(echo "$block" | grep -o 'Vendor=[0-9a-fA-F]*' | cut -d= -f2)
             local PRODUCT_HEX=$(echo "$block" | grep -o 'Product=[0-9a-fA-F]*' | cut -d= -f2)
             local NAME=$(echo "$block" | grep -o 'Name="[^"]*"' | cut -d'"' -f2)
@@ -1616,27 +1622,31 @@ configure_plasma() {
                 local VENDOR_DEC=$((16#$VENDOR_HEX))
                 local PRODUCT_DEC=$((16#$PRODUCT_HEX))
                 
-                # Zápis přes nativní kwriteconfig (zkoušíme verzi 6 i 5 pro jistotu)
                 if [ "$REVERSE_TOUCHPAD" == "true" ]; then
-                    run_as_user "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'NaturalScroll' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'NaturalScroll' true 2>/dev/null"
+                    echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'NaturalScroll' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'NaturalScroll' true 2>/dev/null" >> "$TP_SCRIPT"
                 fi
-                
-                # ClickMethod 2 = proklik dvěma prsty; TapToClick = klepnutí je klik
-                run_as_user "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'ClickMethod' 2 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'ClickMethod' 2 2>/dev/null"
-                run_as_user "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'TapToClick' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'TapToClick' true 2>/dev/null"
+                echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'ClickMethod' 2 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'ClickMethod' 2 2>/dev/null" >> "$TP_SCRIPT"
+                echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'TapToClick' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'TapToClick' true 2>/dev/null" >> "$TP_SCRIPT"
             fi
-        done
+        done <<< "$DEVICES_LIST"
+
+        # Pokud skript obsahuje příkazy, spustíme ho pod identitou uživatele a uklidíme
+        if grep -q "kwriteconfig" "$TP_SCRIPT"; then
+            chown "$REAL_USER:$REAL_USER" "$TP_SCRIPT"
+            chmod +x "$TP_SCRIPT"
+            run_as_user "bash $TP_SCRIPT"
+            log "Nastavení touchpadu/trackpointu zapsáno."
+        else
+            log "Žádný touchpad nebyl úspěšně zpracován."
+        fi
+        rm -f "$TP_SCRIPT"
 
         # 2. NASTAVENÍ INDEXOVÁNÍ (Baloo)
         if [ "$SET_BALOO_INDEXING" == "true" ]; then
             log "Konfiguruji a aktivuji indexování souborů (Baloo)..."
-            
-            # Nastavení složek a zapnutí
             run_as_user "kwriteconfig6 --file baloofilerc --group 'Basic' --key 'Indexing-Enabled' true 2>/dev/null || kwriteconfig5 --file baloofilerc --group 'Basic' --key 'Indexing-Enabled' true 2>/dev/null"
             run_as_user "kwriteconfig6 --file baloofilerc --group 'General' --key 'folders' \"$BALOO_FOLDERS\" 2>/dev/null || kwriteconfig5 --file baloofilerc --group 'General' --key 'folders' \"$BALOO_FOLDERS\" 2>/dev/null"
             run_as_user "kwriteconfig6 --file baloofilerc --group 'General' --key 'first run' false 2>/dev/null || kwriteconfig5 --file baloofilerc --group 'General' --key 'first run' false 2>/dev/null"
-            
-            # Fyzické zapnutí služby pod uživatelem
             su - "$REAL_USER" -c "balooctl6 enable 2>/dev/null || balooctl enable 2>/dev/null || true"
         fi
 
