@@ -1747,59 +1747,64 @@ configure_plasma() {
 # === 4. SYSTÉMOVÉ SLUŽBY A BOOT ===
 
 setup_display_manager() {
-    log "Nastavuji Display Manager a Autologin..."
-    if [ "$DESKTOP_ENV" == "PLASMA" ]; then
-        echo "/usr/bin/sddm" > /etc/X11/default-display-manager 2>/dev/null || true
-        systemctl disable lightdm 2>/dev/null || true
-        systemctl enable sddm 2>/dev/null || true
-        dpkg-reconfigure -f noninteractive sddm 2>/dev/null || true
-        
-        if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
-            mkdir -p /etc/sddm.conf.d
-            printf "[Autologin]\nUser=%s\nSession=plasma\nRelogin=false\n" "$REAL_USER" > /etc/sddm.conf.d/autologin.conf
-        fi
-    else
-        echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager 2>/dev/null || true
-        systemctl disable sddm 2>/dev/null || true
-        systemctl enable lightdm 2>/dev/null || true
-        dpkg-reconfigure -f noninteractive lightdm 2>/dev/null || true
-
-        log "Aplikuji automatickou konfiguraci pro LightDM..."
+    log "Nastavuji Display Manager (LightDM) a Autologin..."
     
-        # 1. Zobrazení uživatelů k nakliknutí
-        local LIGHTDM_CONF="/etc/lightdm/lightdm.conf"
-        if [ -f "$LIGHTDM_CONF" ]; then
-            # Najde zakomentovaný řádek a odkomentuje ho s hodnotou false
-            sed -i 's/^#greeter-hide-users=true/greeter-hide-users=false/' "$LIGHTDM_CONF"
-            sed -i 's/^#greeter-hide-users=false/greeter-hide-users=false/' "$LIGHTDM_CONF"
-        fi
+    # 1. Výchozí Display Manager natvrdo na LightDM
+    echo "/usr/sbin/lightdm" > /etc/X11/default-display-manager 2>/dev/null || true
+    systemctl disable sddm 2>/dev/null || true
+    systemctl enable lightdm 2>/dev/null || true
+    dpkg-reconfigure -f noninteractive lightdm 2>/dev/null || true
 
-        # 2. Nastavení správné tapety a ošetření černé obrazovky
-        local GREETER_CONF="/etc/lightdm/lightdm-gtk-greeter.conf"
-        [ ! -f "$GREETER_CONF" ] && touch "$GREETER_CONF"
+    # 2. Globální nastavení LightDM (Zobrazení uživatelů a Numlock)
+    local LIGHTDM_CONF="/etc/lightdm/lightdm.conf"
+    if [ -f "$LIGHTDM_CONF" ]; then
+        # Odkomentování a nastavení zobrazení seznamu uživatelů
+        sed -i 's/^#greeter-hide-users=true/greeter-hide-users=false/' "$LIGHTDM_CONF"
+        sed -i 's/^#greeter-hide-users=false/greeter-hide-users=false/' "$LIGHTDM_CONF"
         
-        # Pojistka, že tam je sekce [greeter]
-        if ! grep -q "^\[greeter\]" "$GREETER_CONF"; then
-            echo -e "[greeter]\n" >> "$GREETER_CONF"
-        fi
+        # Zapnutí numlocku na přihlašovací obrazovce (pokud je numlockx nainstalovaný)
+        sed -i 's/^#greeter-setup-script=.*/greeter-setup-script=\/usr\/bin\/numlockx on/' "$LIGHTDM_CONF" 2>/dev/null || true
+    fi
 
-        # Vynucení modré tapety pod sekci [greeter]
-        if grep -q "^background=" "$GREETER_CONF"; then
-            sed -i 's|^background=.*|background=/usr/share/lxqt/wallpapers/simple_blue_widescreen.png|' "$GREETER_CONF"
+    # 3. Nastavení vzhledu a VÝCHOZÍ RELACE podle vybraného prostředí
+    local GREETER_CONF="/etc/lightdm/lightdm-gtk-greeter.conf"
+    mkdir -p /etc/lightdm/lightdm.conf.d
+    
+    if [ "$DESKTOP_ENV" == "PLASMA" ]; then
+        log "Aplikuji motiv Breeze pro LightDM (KDE Plasma)..."
+        echo "[greeter]" > "$GREETER_CONF"
+        echo "theme-name = Breeze" >> "$GREETER_CONF"
+        echo "icon-theme-name = breeze" >> "$GREETER_CONF"
+        echo "font-name = Noto Sans 10" >> "$GREETER_CONF"
+        echo "background = /usr/share/desktop-base/active-theme/login/background.svg" >> "$GREETER_CONF"
+        echo "indicators = ~host;~spacer;~clock;~spacer;~session;~power" >> "$GREETER_CONF"
+        
+        # Vynucení výchozí relace na Plasma Wayland pro manuální přihlášení
+        echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/50-session.conf
+        echo "user-session=plasmawayland" >> /etc/lightdm/lightdm.conf.d/50-session.conf
+    else
+        log "Aplikuji výchozí modrý motiv pro LightDM (LXQt)..."
+        echo "[greeter]" > "$GREETER_CONF"
+        echo "background = /usr/share/lxqt/wallpapers/simple_blue_widescreen.png" >> "$GREETER_CONF"
+        
+        # Vynucení výchozí relace na LXQt pro manuální přihlášení
+        echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/50-session.conf
+        echo "user-session=lxqt" >> /etc/lightdm/lightdm.conf.d/50-session.conf
+    fi
+
+    # 4. Nastavení Autologinu
+    if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
+        log "Nastavuji automatické přihlášení pro uživatele $REAL_USER..."
+        
+        echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/autologin.conf
+        echo "autologin-user=$REAL_USER" >> /etc/lightdm/lightdm.conf.d/autologin.conf
+        echo "autologin-user-timeout=0" >> /etc/lightdm/lightdm.conf.d/autologin.conf
+        
+        # Vynutí správnou relaci i pro automatické přihlášení
+        if [ "$DESKTOP_ENV" == "PLASMA" ]; then
+            echo "autologin-session=plasmawayland" >> /etc/lightdm/lightdm.conf.d/autologin.conf
         else
-            sed -i '/^\[greeter\]/a background=/usr/share/lxqt/wallpapers/simple_blue_widescreen.png' "$GREETER_CONF"
-        fi
-        
-        log "LightDM nastaven s modrou tapetou."
-        
-        if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
-            mkdir -p /etc/lightdm/lightdm.conf.d
-            
-            # TADY JE TA HLAVIČKA [Seat:*], KTEROU JSEM DVAKRÁT ZAPOMNĚL:
-            printf "[Seat:*]\nautologin-user=%s\nautologin-user-timeout=0\n" "$REAL_USER" > /etc/lightdm/lightdm.conf.d/autologin.conf
-            
-            # Zapnutí numlocku na přihlašovací obrazovce
-            sed -i 's/^#greeter-setup-script=.*/greeter-setup-script=\/usr\/bin\/numlockx on/' /etc/lightdm/lightdm.conf 2>/dev/null || true
+            echo "autologin-session=lxqt" >> /etc/lightdm/lightdm.conf.d/autologin.conf
         fi
     fi
 }
