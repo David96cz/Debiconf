@@ -1597,17 +1597,16 @@ configure_plasma() {
     if [ -f "$PLASMA_CONF" ]; then
         log "Čtu dodatečnou konfiguraci z $PLASMA_CONF..."
         
-        # Vytáhnutí hodnot
+        # Vytáhnutí hodnot z configu (ošetřeno proti Windows koncům řádků)
         local SET_BALOO_INDEXING=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^SET_BALOO_INDEXING=" | cut -d= -f2 | tr -d '\r')
         local BALOO_FOLDERS=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^BALOO_FOLDERS=" | cut -d= -f2 | tr -d '\r' | sed "s/\$REAL_USER/$REAL_USER/g")
         local START_MENU_ICON=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^START_MENU_ICON=" | cut -d= -f2 | tr -d '\r')
         local REVERSE_TOUCHPAD=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^REVERSE_TOUCHPAD=" | cut -d= -f2 | tr -d '\r')
 
-        # 1. NASTAVENÍ TOUCHPADU (Nativní konfigurace Plasmy pro Wayland)
-        log "Detekuji touchpady pro nastavení scrollování a prokliku dvěma prsty..."
-        local KCM_INPUT="$USER_HOME/.config/kcminputrc"
+        # 1. NASTAVENÍ TOUCHPADU (Nativní KWriteConfig pro Wayland/ThinkPad)
+        log "Detekuji touchpady a propisuji nastavení (Natural Scroll, ClickMethod, TapToClick)..."
         
-        # Nejsilnější možný filtr: převede text na malá písmena a chytí vše od touchpadů, přes trackpady, až po Synaptics a I2C hardware
+        # Prohledáme připojená zařízení a najdeme cokoliv, co vypadá jako touchpad/trackpoint
         awk -v RS='' 'tolower($0) ~ /touch|track|synaptics|alps|elan|focal|i2c hid/' /proc/bus/input/devices | while read -r block; do
             local VENDOR_HEX=$(echo "$block" | grep -o 'Vendor=[0-9a-fA-F]*' | cut -d= -f2)
             local PRODUCT_HEX=$(echo "$block" | grep -o 'Product=[0-9a-fA-F]*' | cut -d= -f2)
@@ -1617,42 +1616,31 @@ configure_plasma() {
                 local VENDOR_DEC=$((16#$VENDOR_HEX))
                 local PRODUCT_DEC=$((16#$PRODUCT_HEX))
                 
-                # Zápis sekce přesně pro tento konkrétní hardware
-                echo -e "\n[Libinput][$VENDOR_DEC][$PRODUCT_DEC][$NAME]" >> "$KCM_INPUT"
-                
+                # Zápis přes nativní kwriteconfig (zkoušíme verzi 6 i 5 pro jistotu)
                 if [ "$REVERSE_TOUCHPAD" == "true" ]; then
-                    echo "NaturalScroll=true" >> "$KCM_INPUT"
+                    run_as_user "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'NaturalScroll' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'NaturalScroll' true 2>/dev/null"
                 fi
                 
-                # Proklik dvěma prsty (V KDE: 1 = pravý roh, 2 = dva prsty)
-                echo "ClickMethod=2" >> "$KCM_INPUT"
-                
-                # Klepnutí na plochu touchpadu jako levý klik
-                echo "TapToClick=true" >> "$KCM_INPUT"
+                # ClickMethod 2 = proklik dvěma prsty; TapToClick = klepnutí je klik
+                run_as_user "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'ClickMethod' 2 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'ClickMethod' 2 2>/dev/null"
+                run_as_user "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'TapToClick' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'TapToClick' true 2>/dev/null"
             fi
         done
-        chown "$REAL_USER:$REAL_USER" "$KCM_INPUT" 2>/dev/null || true
 
         # 2. NASTAVENÍ INDEXOVÁNÍ (Baloo)
         if [ "$SET_BALOO_INDEXING" == "true" ]; then
             log "Konfiguruji a aktivuji indexování souborů (Baloo)..."
-            local BALOO_CONF="$USER_HOME/.config/baloofilerc"
             
-            # Hrubý zápis souboru (nyní s klíčem first run=false, aby to Plasma neanulovala)
-            echo "[Basic]" > "$BALOO_CONF"
-            echo "Indexing-Enabled=true" >> "$BALOO_CONF"
-            echo "" >> "$BALOO_CONF"
-            echo "[General]" >> "$BALOO_CONF"
-            echo "first run=false" >> "$BALOO_CONF"
-            echo "exclude folders=" >> "$BALOO_CONF"
-            echo "folders=$BALOO_FOLDERS" >> "$BALOO_CONF"
-            chown "$REAL_USER:$REAL_USER" "$BALOO_CONF" || true
+            # Nastavení složek a zapnutí
+            run_as_user "kwriteconfig6 --file baloofilerc --group 'Basic' --key 'Indexing-Enabled' true 2>/dev/null || kwriteconfig5 --file baloofilerc --group 'Basic' --key 'Indexing-Enabled' true 2>/dev/null"
+            run_as_user "kwriteconfig6 --file baloofilerc --group 'General' --key 'folders' \"$BALOO_FOLDERS\" 2>/dev/null || kwriteconfig5 --file baloofilerc --group 'General' --key 'folders' \"$BALOO_FOLDERS\" 2>/dev/null"
+            run_as_user "kwriteconfig6 --file baloofilerc --group 'General' --key 'first run' false 2>/dev/null || kwriteconfig5 --file baloofilerc --group 'General' --key 'first run' false 2>/dev/null"
             
-            # KLÍČOVÝ KROK: Oživení démona pod identitou uživatele (bez toho GUI tvrdí, že je to vypnuté)
+            # Fyzické zapnutí služby pod uživatelem
             su - "$REAL_USER" -c "balooctl6 enable 2>/dev/null || balooctl enable 2>/dev/null || true"
         fi
 
-        # 3. ZMĚNA IKONY START MENU (Tvrdý zásah do systémové šablony Plasmy)
+        # 3. ZMĚNA IKONY START MENU (Zásah do systémových XML šablon)
         if [ -n "$START_MENU_ICON" ]; then
             log "Zapisuji ikonu menu natvrdo do systémových XML šablon Plasmy..."
             for plasmoid in kickoff kicker dash; do
