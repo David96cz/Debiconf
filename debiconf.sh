@@ -1602,40 +1602,64 @@ configure_plasma() {
         local START_MENU_ICON=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^START_MENU_ICON=" | cut -d= -f2 | tr -d '\r')
         local REVERSE_TOUCHPAD=$(sed -n '/^\[CONFIG\]/,/^\[/p' "$PLASMA_CONF" | grep "^REVERSE_TOUCHPAD=" | cut -d= -f2 | tr -d '\r')
 
-        # 1. NASTAVENÍ TOUCHPADU (Bez roury, přes dočasný skript - imunní proti sežrání stdin)
+        # 1. NASTAVENÍ TOUCHPADU (Čistý Bash parser - 100% spolehlivost)
         log "Detekuji touchpady a generuji konfigurační skript..."
         
-        # Uložíme si seznam do proměnné (vyhneme se ztrátě dat)
-        local DEVICES_LIST=$(awk -v RS='' 'tolower($0) ~ /touch|track|synaptics|alps|elan|focal|i2c hid/' /proc/bus/input/devices)
         local TP_SCRIPT="$USER_HOME/setup_touchpad_tmp.sh"
         echo "#!/bin/bash" > "$TP_SCRIPT"
         
-        # Přečteme seznam z proměnné a vygenerujeme dávkový soubor
-        while read -r block; do
-            [ -z "$block" ] && continue
-            
-            local VENDOR_HEX=$(echo "$block" | grep -o 'Vendor=[0-9a-fA-F]*' | cut -d= -f2)
-            local PRODUCT_HEX=$(echo "$block" | grep -o 'Product=[0-9a-fA-F]*' | cut -d= -f2)
-            local NAME=$(echo "$block" | grep -o 'Name="[^"]*"' | cut -d'"' -f2)
+        local V_DEC=""
+        local P_DEC=""
+        local T_NAME=""
+        local IS_TOUCH=0
 
-            if [ -n "$VENDOR_HEX" ] && [ -n "$PRODUCT_HEX" ] && [ -n "$NAME" ]; then
-                local VENDOR_DEC=$((16#$VENDOR_HEX))
-                local PRODUCT_DEC=$((16#$PRODUCT_HEX))
-                
-                if [ "$REVERSE_TOUCHPAD" == "true" ]; then
-                    echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'NaturalScroll' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'NaturalScroll' true 2>/dev/null" >> "$TP_SCRIPT"
+        # Čteme bezpečně soubor jádra řádek po řádku
+        while IFS= read -r line; do
+            # Prázdný řádek znamená konec jednoho zařízení
+            if [ -z "$line" ]; then
+                if [ "$IS_TOUCH" -eq 1 ] && [ -n "$V_DEC" ] && [ -n "$P_DEC" ] && [ -n "$T_NAME" ]; then
+                    if [ "$REVERSE_TOUCHPAD" == "true" ]; then
+                        echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'NaturalScroll' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'NaturalScroll' true 2>/dev/null" >> "$TP_SCRIPT"
+                    fi
+                    echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'ClickMethod' 2 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'ClickMethod' 2 2>/dev/null" >> "$TP_SCRIPT"
+                    echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'TapToClick' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'TapToClick' true 2>/dev/null" >> "$TP_SCRIPT"
                 fi
-                echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'ClickMethod' 2 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'ClickMethod' 2 2>/dev/null" >> "$TP_SCRIPT"
-                echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'TapToClick' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$VENDOR_DEC' --group '$PRODUCT_DEC' --group '$NAME' --key 'TapToClick' true 2>/dev/null" >> "$TP_SCRIPT"
+                # Reset proměnných pro další zařízení
+                V_DEC=""; P_DEC=""; T_NAME=""; IS_TOUCH=0
+                continue
             fi
-        done <<< "$DEVICES_LIST"
 
-        # Pokud skript obsahuje příkazy, spustíme ho pod identitou uživatele a uklidíme
+            # Pokud na řádku najdeme Vendor a Product, vytáhneme je a převedeme z hex do dec
+            if echo "$line" | grep -q "^I:"; then
+                local v_hex=$(echo "$line" | grep -o 'Vendor=[0-9a-fA-F]*' | cut -d= -f2)
+                local p_hex=$(echo "$line" | grep -o 'Product=[0-9a-fA-F]*' | cut -d= -f2)
+                [ -n "$v_hex" ] && V_DEC=$((16#$v_hex))
+                [ -n "$p_hex" ] && P_DEC=$((16#$p_hex))
+            
+            # Pokud na řádku najdeme Name, ověříme, zda je to touchpad/trackpoint
+            elif echo "$line" | grep -q "^N:"; then
+                T_NAME=$(echo "$line" | grep -o 'Name="[^"]*"' | cut -d'"' -f2)
+                if echo "$T_NAME" | grep -iqE "touch|track|synaptics|alps|elan|focal|i2c hid"; then
+                    IS_TOUCH=1
+                fi
+            fi
+        done < /proc/bus/input/devices
+
+        # Pojistka: Kdyby poslední zařízení v souboru nekončilo prázdným řádkem
+        if [ "$IS_TOUCH" -eq 1 ] && [ -n "$V_DEC" ] && [ -n "$P_DEC" ] && [ -n "$T_NAME" ]; then
+            if [ "$REVERSE_TOUCHPAD" == "true" ]; then
+                echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'NaturalScroll' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'NaturalScroll' true 2>/dev/null" >> "$TP_SCRIPT"
+            fi
+            echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'ClickMethod' 2 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'ClickMethod' 2 2>/dev/null" >> "$TP_SCRIPT"
+            echo "kwriteconfig6 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'TapToClick' true 2>/dev/null || kwriteconfig5 --file kcminputrc --group 'Libinput' --group '$V_DEC' --group '$P_DEC' --group '$T_NAME' --key 'TapToClick' true 2>/dev/null" >> "$TP_SCRIPT"
+        fi
+
+        # Kontrola a spuštění vygenerovaného skriptu
         if grep -q "kwriteconfig" "$TP_SCRIPT"; then
             chown "$REAL_USER:$REAL_USER" "$TP_SCRIPT"
             chmod +x "$TP_SCRIPT"
             run_as_user "bash $TP_SCRIPT"
-            log "Nastavení touchpadu/trackpointu zapsáno."
+            log "Nastavení touchpadu/trackpointu úspěšně zapsáno."
         else
             log "Žádný touchpad nebyl úspěšně zpracován."
         fi
