@@ -1922,6 +1922,12 @@ setup_display_manager() {
     if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
         log "Nastavuji automatické přihlášení pro uživatele $REAL_USER..."
         
+        # --- CHYBĚJÍCÍ PAM FIX PRO DEBIAN ---
+        # Vytvoření skupiny autologin a přidání uživatele, jinak to PAM blokne
+        groupadd -r autologin 2>/dev/null || true
+        gpasswd -a "$REAL_USER" autologin
+        # ------------------------------------
+        
         echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/autologin.conf
         echo "autologin-user=$REAL_USER" >> /etc/lightdm/lightdm.conf.d/autologin.conf
         echo "autologin-user-timeout=0" >> /etc/lightdm/lightdm.conf.d/autologin.conf
