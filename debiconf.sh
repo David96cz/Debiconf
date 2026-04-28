@@ -472,6 +472,11 @@ lxqt_setup_apps_and_defaults() {
 prepare_system() {
     log "Vypínám otravný systémový PC speaker (pípání)..."
     echo -e "blacklist pcspkr\nblacklist snd_pcsp" > /etc/modprobe.d/nobeep.conf
+
+    mkdir -p /usr/share/backgrounds
+    cp "$CONTENTS_DIR/wallpaper.png" "/usr/share/backgrounds/wallpaper.png"
+    chmod 644 "/usr/share/backgrounds/wallpaper.png"
+
     log "Základní příprava systému a záchrana Wi-Fi sítě..."
     
     # Záchrana Wi-Fi z instalátoru
@@ -1600,7 +1605,7 @@ configure_plasma() {
     sudo bash -c 'echo "icon-theme-name = breeze" >> /etc/lightdm/lightdm-gtk-greeter.conf'
     sudo bash -c 'echo "font-name = Noto Sans 10" >> /etc/lightdm/lightdm-gtk-greeter.conf'
     # Volitelné: Nastavení pozadí (použije výchozí Debian tapetu, pokud existuje)
-    sudo bash -c 'echo "background = /usr/share/desktop-base/active-theme/login/background.svg" >> /etc/lightdm/lightdm-gtk-greeter.conf'
+    sudo bash -c 'echo "background = /usr/share/backgrounds/wallpaper.png" >> /etc/lightdm/lightdm-gtk-greeter.conf'
     # Uspořádání horní lišty: Jméno PC, mezera, hodiny, mezera, výběr relace, vypínací tlačítko
     sudo bash -c 'echo "indicators = ~host;~spacer;~clock;~spacer;~session;~power" >> /etc/lightdm/lightdm-gtk-greeter.conf'
 
@@ -1613,17 +1618,28 @@ configure_plasma() {
 
     # 1. Tvorba kamikadze skriptu pro tapetu
     echo "#!/bin/bash" > "$USER_BIN/set-wallpaper.sh"
-    echo "sleep 5" >> "$USER_BIN/set-wallpaper.sh" # Počká na nastartování Plasmy
-    echo "qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '" >> "$USER_BIN/set-wallpaper.sh"
-    echo "    var allDesktops = desktops();" >> "$USER_BIN/set-wallpaper.sh"
-    echo "    for (i=0;i<allDesktops.length;i++) {" >> "$USER_BIN/set-wallpaper.sh"
-    echo "        d = allDesktops[i];" >> "$USER_BIN/set-wallpaper.sh"
-    echo "        d.wallpaperPlugin = \"org.kde.image\";" >> "$USER_BIN/set-wallpaper.sh"
-    echo "        d.currentConfigGroup = Array(\"Wallpaper\", \"org.kde.image\", \"General\");" >> "$USER_BIN/set-wallpaper.sh"
-    echo "        d.writeConfig(\"Image\", \"file:///usr/share/desktop-base/active-theme/login/background.svg\");" >> "$USER_BIN/set-wallpaper.sh"
-    echo "    }" >> "$USER_BIN/set-wallpaper.sh"
-    echo "'" >> "$USER_BIN/set-wallpaper.sh"
-    # Skript smaže spouštěč i sám sebe
+    
+    # Pojistka: Čeká, dokud plasmashell neodpovídá na DBus
+    echo "while ! dbus-send --session --dest=org.kde.plasmashell --type=method_call --print-reply /PlasmaShell org.freedesktop.DBus.Peer.Ping >/dev/null 2>&1; do" >> "$USER_BIN/set-wallpaper.sh"
+    echo "    sleep 1" >> "$USER_BIN/set-wallpaper.sh"
+    echo "done" >> "$USER_BIN/set-wallpaper.sh"
+    echo "sleep 2" >> "$USER_BIN/set-wallpaper.sh" # Extra chvilka na dokreslení oken
+    
+    # Tvůj funkční dbus-send příkaz (rozšířený o panely)
+    echo "dbus-send --session --dest=org.kde.plasmashell --type=method_call /PlasmaShell org.kde.PlasmaShell.evaluateScript string:\"" >> "$USER_BIN/set-wallpaper.sh"
+    echo "var allDesktops = desktops();" >> "$USER_BIN/set-wallpaper.sh"
+    echo "for (var i = 0; i < allDesktops.length; i++) {" >> "$USER_BIN/set-wallpaper.sh"
+    echo "    var d = allDesktops[i];" >> "$USER_BIN/set-wallpaper.sh"
+    echo "    d.wallpaperPlugin = 'org.kde.image';" >> "$USER_BIN/set-wallpaper.sh"
+    echo "    d.currentConfigGroup = Array('Wallpaper', 'org.kde.image', 'General');" >> "$USER_BIN/set-wallpaper.sh"
+    echo "    d.writeConfig('Image', 'file:///usr/share/backgrounds/wallpaper.png');" >> "$USER_BIN/set-wallpaper.sh"
+    echo "}" >> "$USER_BIN/set-wallpaper.sh"
+    echo "var allPanels = panels();" >> "$USER_BIN/set-wallpaper.sh"
+    echo "for (var j = 0; j < allPanels.length; j++) {" >> "$USER_BIN/set-wallpaper.sh"
+    echo "    allPanels[j].opacity = 'translucent';" >> "$USER_BIN/set-wallpaper.sh"
+    echo "}\"" >> "$USER_BIN/set-wallpaper.sh"
+    
+    # SEBEVRAŽDA SKRIPTU
     echo "rm -f \"$AUTOSTART_DIR/set-wallpaper.desktop\"" >> "$USER_BIN/set-wallpaper.sh"
     echo "rm -f \"\$0\"" >> "$USER_BIN/set-wallpaper.sh"
 
@@ -1634,7 +1650,6 @@ configure_plasma() {
     echo "Type=Application" >> "$AUTOSTART_DIR/set-wallpaper.desktop"
     echo "Exec=$USER_BIN/set-wallpaper.sh" >> "$AUTOSTART_DIR/set-wallpaper.desktop"
     echo "Hidden=false" >> "$AUTOSTART_DIR/set-wallpaper.desktop"
-    echo "NoDisplay=false" >> "$AUTOSTART_DIR/set-wallpaper.desktop"
     echo "X-GNOME-Autostart-enabled=true" >> "$AUTOSTART_DIR/set-wallpaper.desktop"
     echo "Name=Auto Wallpaper Setup" >> "$AUTOSTART_DIR/set-wallpaper.desktop"
 
