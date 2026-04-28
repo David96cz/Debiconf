@@ -1854,10 +1854,6 @@ configure_plasma() {
             run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Engine KSplashQML 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Engine KSplashQML 2>/dev/null"
             run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Theme custom.wallpaper.splash 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Theme custom.wallpaper.splash 2>/dev/null"
         fi
-            log "Ponechávám výchozí Splash Screen (KDE Breeze) pro čisté prolnutí do hotové plochy..."
-            run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Engine KSplashQML 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Engine KSplashQML 2>/dev/null"
-            run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Theme org.kde.breeze.desktop 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Theme org.kde.breeze.desktop 2>/dev/null"
-        fi
 
         # log "Nasazuji DBus fix pro zamykání Start menu přes LightDM..."
         
