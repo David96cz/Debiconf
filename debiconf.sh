@@ -1823,40 +1823,71 @@ configure_plasma() {
             run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Engine None 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Engine None 2>/dev/null"
             run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Theme None 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Theme None 2>/dev/null"
         else
+            log "Vytvářím a nasazuji VLASTNÍ Splash motiv s fixní tapetou..."
+            
+            local SPLASH_DIR="/home/$REAL_USER/.local/share/plasma/look-and-feel/custom.wallpaper.splash"
+            sudo -u "$REAL_USER" mkdir -p "$SPLASH_DIR/contents/splash"
+
+            # 1. Zápis metadat pro KDE
+            echo "{" > "$SPLASH_DIR/metadata.json"
+            echo "    \"KPlugin\": {" >> "$SPLASH_DIR/metadata.json"
+            echo "        \"Id\": \"custom.wallpaper.splash\"," >> "$SPLASH_DIR/metadata.json"
+            echo "        \"Name\": \"WallpaperSplash\"" >> "$SPLASH_DIR/metadata.json"
+            echo "    }" >> "$SPLASH_DIR/metadata.json"
+            echo "}" >> "$SPLASH_DIR/metadata.json"
+
+            # 2. Zápis zdrojového kódu (QML), který jen ukáže obrázek
+            echo "import QtQuick 2.15" > "$SPLASH_DIR/contents/splash/Splash.qml"
+            echo "Rectangle {" >> "$SPLASH_DIR/contents/splash/Splash.qml"
+            echo "    color: \"black\"" >> "$SPLASH_DIR/contents/splash/Splash.qml"
+            echo "    Image {" >> "$SPLASH_DIR/contents/splash/Splash.qml"
+            echo "        anchors.fill: parent" >> "$SPLASH_DIR/contents/splash/Splash.qml"
+            echo "        source: \"file:///usr/share/backgrounds/wallpaper.png\"" >> "$SPLASH_DIR/contents/splash/Splash.qml"
+            echo "        fillMode: Image.PreserveAspectCrop" >> "$SPLASH_DIR/contents/splash/Splash.qml"
+            echo "    }" >> "$SPLASH_DIR/contents/splash/Splash.qml"
+            echo "}" >> "$SPLASH_DIR/contents/splash/Splash.qml"
+
+            # 3. Nastavení práv
+            chown -R "$REAL_USER:$REAL_USER" "/home/$REAL_USER/.local/share/plasma"
+
+            # 4. Aktivace našeho nového motivu
+            run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Engine KSplashQML 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Engine KSplashQML 2>/dev/null"
+            run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Theme custom.wallpaper.splash 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Theme custom.wallpaper.splash 2>/dev/null"
+        fi
             log "Ponechávám výchozí Splash Screen (KDE Breeze) pro čisté prolnutí do hotové plochy..."
             run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Engine KSplashQML 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Engine KSplashQML 2>/dev/null"
             run_as_user "kwriteconfig6 --file ksplashrc --group KSplash --key Theme org.kde.breeze.desktop 2>/dev/null || kwriteconfig5 --file ksplashrc --group KSplash --key Theme org.kde.breeze.desktop 2>/dev/null"
         fi
 
-        log "Nasazuji DBus fix pro zamykání Start menu přes LightDM..."
+        # log "Nasazuji DBus fix pro zamykání Start menu přes LightDM..."
         
-        local USER_BIN="/home/$REAL_USER/.local/bin"
-        local AUTOSTART_DIR="/home/$REAL_USER/.config/autostart"
+        # local USER_BIN="/home/$REAL_USER/.local/bin"
+        # local AUTOSTART_DIR="/home/$REAL_USER/.config/autostart"
 
-        # Vytvoření složek pod právy uživatele
-        sudo -u "$REAL_USER" mkdir -p "$USER_BIN" "$AUTOSTART_DIR"
+        # # Vytvoření složek pod právy uživatele
+        # sudo -u "$REAL_USER" mkdir -p "$USER_BIN" "$AUTOSTART_DIR"
 
-        # 1. Zápis samotného skriptu (Escapujeme znaky, aby to bash sežral čistě)
-        echo "#!/bin/bash" > "$USER_BIN/lock-fix.sh"
-        echo "dbus-monitor --session \"type='signal',interface='org.freedesktop.ScreenSaver'\" | while read x; do" >> "$USER_BIN/lock-fix.sh"
-        echo "  if echo \"\$x\" | grep -q \"boolean true\"; then" >> "$USER_BIN/lock-fix.sh"
-        echo "    dm-tool lock" >> "$USER_BIN/lock-fix.sh"
-        echo "  fi" >> "$USER_BIN/lock-fix.sh"
-        echo "done" >> "$USER_BIN/lock-fix.sh"
+        # # 1. Zápis samotného skriptu (Escapujeme znaky, aby to bash sežral čistě)
+        # echo "#!/bin/bash" > "$USER_BIN/lock-fix.sh"
+        # echo "dbus-monitor --session \"type='signal',interface='org.freedesktop.ScreenSaver'\" | while read x; do" >> "$USER_BIN/lock-fix.sh"
+        # echo "  if echo \"\$x\" | grep -q \"boolean true\"; then" >> "$USER_BIN/lock-fix.sh"
+        # echo "    dm-tool lock" >> "$USER_BIN/lock-fix.sh"
+        # echo "  fi" >> "$USER_BIN/lock-fix.sh"
+        # echo "done" >> "$USER_BIN/lock-fix.sh"
 
-        # 2. Zápis autostart souboru
-        echo "[Desktop Entry]" > "$AUTOSTART_DIR/lock-fix.desktop"
-        echo "Type=Application" >> "$AUTOSTART_DIR/lock-fix.desktop"
-        echo "Exec=$USER_BIN/lock-fix.sh" >> "$AUTOSTART_DIR/lock-fix.desktop"
-        echo "Hidden=false" >> "$AUTOSTART_DIR/lock-fix.desktop"
-        echo "NoDisplay=false" >> "$AUTOSTART_DIR/lock-fix.desktop"
-        echo "X-GNOME-Autostart-enabled=true" >> "$AUTOSTART_DIR/lock-fix.desktop"
-        echo "Name=LightDM Lock Fix" >> "$AUTOSTART_DIR/lock-fix.desktop"
-        echo "Comment=Přesměrování nativního KDE zamykání na dm-tool" >> "$AUTOSTART_DIR/lock-fix.desktop"
+        # # 2. Zápis autostart souboru
+        # echo "[Desktop Entry]" > "$AUTOSTART_DIR/lock-fix.desktop"
+        # echo "Type=Application" >> "$AUTOSTART_DIR/lock-fix.desktop"
+        # echo "Exec=$USER_BIN/lock-fix.sh" >> "$AUTOSTART_DIR/lock-fix.desktop"
+        # echo "Hidden=false" >> "$AUTOSTART_DIR/lock-fix.desktop"
+        # echo "NoDisplay=false" >> "$AUTOSTART_DIR/lock-fix.desktop"
+        # echo "X-GNOME-Autostart-enabled=true" >> "$AUTOSTART_DIR/lock-fix.desktop"
+        # echo "Name=LightDM Lock Fix" >> "$AUTOSTART_DIR/lock-fix.desktop"
+        # echo "Comment=Přesměrování nativního KDE zamykání na dm-tool" >> "$AUTOSTART_DIR/lock-fix.desktop"
 
-        # 3. Nastavení práv a vlastnictví
-        chmod +x "$USER_BIN/lock-fix.sh"
-        chown -R "$REAL_USER:$REAL_USER" "$USER_BIN" "$AUTOSTART_DIR"
+        # # 3. Nastavení práv a vlastnictví
+        # chmod +x "$USER_BIN/lock-fix.sh"
+        # chown -R "$REAL_USER:$REAL_USER" "$USER_BIN" "$AUTOSTART_DIR"
     fi
     
 }
