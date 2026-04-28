@@ -1913,13 +1913,13 @@ setup_display_manager() {
         echo "background = /usr/share/backgrounds/wallpaper.png" >> "$GREETER_CONF"
     fi
 
-    # 4. Nastavení Autologinu
+    # 4. Nastavení Autologinu (Zápis i absolutní výmaz)
     if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
         log "Nastavuji automatické přihlášení pro uživatele $REAL_USER..."
         
         # PAM Fix (Nezbytné pro Debian)
         groupadd -r autologin 2>/dev/null || true
-        gpasswd -a "$REAL_USER" autologin
+        gpasswd -a "$REAL_USER" autologin 2>/dev/null || true
         
         echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/autologin.conf
         echo "autologin-user=$REAL_USER" >> /etc/lightdm/lightdm.conf.d/autologin.conf
@@ -1932,11 +1932,17 @@ setup_display_manager() {
             log "Detekována Plasma session: $PLASMA_SESSION"
             
             echo "autologin-session=$PLASMA_SESSION" >> /etc/lightdm/lightdm.conf.d/autologin.conf
-            echo "user-session=$PLASMA_SESSION" >> /etc/lightdm/lightdm.conf.d/autologin.conf
         else
             echo "autologin-session=lxqt" >> /etc/lightdm/lightdm.conf.d/autologin.conf
-            echo "user-session=lxqt" >> /etc/lightdm/lightdm.conf.d/autologin.conf
         fi
+    else
+        log "Vypínám automatické přihlášení (vyžadováno heslo)..."
+        
+        # 1. Vyhození uživatele z PAM skupiny pro automatické přihlášení
+        gpasswd -d "$REAL_USER" autologin 2>/dev/null || true
+        
+        # 2. Fyzické smazání konfiguračního souboru, aby to LightDM nenačetlo
+        rm -f /etc/lightdm/lightdm.conf.d/autologin.conf
     fi
 }
 
