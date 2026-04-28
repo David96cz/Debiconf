@@ -1869,7 +1869,7 @@ setup_display_manager() {
         echo "theme-name = Breeze" >> "$GREETER_CONF"
         echo "icon-theme-name = breeze" >> "$GREETER_CONF"
         echo "font-name = Noto Sans 10" >> "$GREETER_CONF"
-        echo "background = /usr/share/desktop-base/active-theme/login/background.svg" >> "$GREETER_CONF"
+        echo "background = /usr/share/backgrounds/wallpaper.png" >> "$GREETER_CONF"
         echo "indicators = ~host;~spacer;~clock;~spacer;~session;~power" >> "$GREETER_CONF"
         
         # Vynucení výchozí relace na Plasma Wayland pro manuální přihlášení
