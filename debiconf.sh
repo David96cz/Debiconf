@@ -470,26 +470,6 @@ lxqt_setup_apps_and_defaults() {
 }
 
 prepare_system() {
-        log "Skrývám GRUB načítání při startu počítače..."
-
-    # Odstranění pozadí
-    sudo sed -i '/GRUB_BACKGROUND/d' /etc/default/grub
-    
-    # Nastavení absolutního ticha (bez menu a prodlevy)
-    sudo sed -i 's/GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub
-    if ! grep -q "GRUB_TIMEOUT_STYLE=hidden" /etc/default/grub; then
-        echo "GRUB_TIMEOUT_STYLE=hidden" | sudo tee -a /etc/default/grub
-    fi
-    sudo sed -i 's/#GRUB_TERMINAL=console/GRUB_TERMINAL=console/' /etc/default/grub
-
-    # BEZPEČNÉ PŘIDÁNÍ PARAMETRŮ (Zanechá Bay Trail i AMD fixy netknuté!)
-    for param in quiet splash loglevel=3 rd.systemd.show_status=false vga=current; do
-        sudo sed -i -e "/^GRUB_CMDLINE_LINUX_DEFAULT=/ { /$param/! s/\"$/ $param\"/ }" /etc/default/grub
-    done
-
-    # Propis změn do systému
-    sudo update-grub
-
     log "Vypínám otravný systémový PC speaker (pípání)..."
     echo -e "blacklist pcspkr\nblacklist snd_pcsp" > /etc/modprobe.d/nobeep.conf
 
@@ -1926,16 +1906,8 @@ setup_display_manager() {
         echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/50-session.conf
         echo "user-session=plasmawayland" >> /etc/lightdm/lightdm.conf.d/50-session.conf
 
-        # 1. Vynucení čistého motivu Breeze (pro jistotu, kdyby se Debian snažil cpát svůj)
-        sudo mkdir -p /etc/sddm.conf.d
-        echo "[Theme]" | sudo tee /etc/sddm.conf.d/10-theme.conf > /dev/null
-        echo "Current=breeze" | sudo tee -a /etc/sddm.conf.d/10-theme.conf > /dev/null
-
-        # 2. Vytvoření uživatelského configu motivu, který natvrdo přepíše tapetu
-        sudo touch /usr/share/sddm/themes/breeze/theme.conf.user
-        echo "[General]" | sudo tee /usr/share/sddm/themes/breeze/theme.conf.user > /dev/null
-        echo "type=image" | sudo tee -a /usr/share/sddm/themes/breeze/theme.conf.user > /dev/null
-        echo "background=/usr/share/backgrounds/wallpaper.png" | sudo tee -a /usr/share/sddm/themes/breeze/theme.conf.user > /dev/null
+        log "Nastavuji jednotnou tapetu pro KDE Lockscreen..."
+        run_as_user "kwriteconfig6 --file kscreenlockerrc --group Greeter --group Wallpaper --group org.kde.image --group General --key Image \"file:///usr/share/backgrounds/wallpaper.png\" 2>/dev/null || kwriteconfig5 --file kscreenlockerrc --group Greeter --group Wallpaper --group org.kde.image --group General --key Image \"file:///usr/share/backgrounds/wallpaper.png\" 2>/dev/null"
     else
         log "Aplikuji výchozí modrý motiv pro LightDM (LXQt)..."
         echo "[greeter]" > "$GREETER_CONF"
@@ -1966,6 +1938,21 @@ setup_display_manager() {
 setup_boot() {
     log "Nastavuji GRUB a Boot Logo..."
     sed -i "s/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=$TIMEOUT/" /etc/default/grub || true
+
+    # Odstranění pozadí
+    sudo sed -i '/GRUB_BACKGROUND/d' /etc/default/grub
+    
+    # Nastavení absolutního ticha (bez menu a prodlevy)
+    sudo sed -i 's/GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub
+    if ! grep -q "GRUB_TIMEOUT_STYLE=hidden" /etc/default/grub; then
+        echo "GRUB_TIMEOUT_STYLE=hidden" | sudo tee -a /etc/default/grub
+    fi
+    sudo sed -i 's/#GRUB_TERMINAL=console/GRUB_TERMINAL=console/' /etc/default/grub
+
+    # BEZPEČNÉ PŘIDÁNÍ PARAMETRŮ (Zanechá Bay Trail i AMD fixy netknuté!)
+    for param in quiet splash loglevel=3 rd.systemd.show_status=false vga=current; do
+        sudo sed -i -e "/^GRUB_CMDLINE_LINUX_DEFAULT=/ { /$param/! s/\"$/ $param\"/ }" /etc/default/grub
+    done
 
     if [ "$BOOT_LOGO" == "TRUE" ]; then
         log "Aplikuji grafický start (Plymouth)..."
