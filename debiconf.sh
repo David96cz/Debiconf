@@ -1889,22 +1889,21 @@ setup_display_manager() {
         sed -i 's/^#greeter-setup-script=.*/greeter-setup-script=\/usr\/bin\/numlockx on/' "$LIGHTDM_CONF" 2>/dev/null || true
     fi
 
-    # 3. Nastavení vzhledu a VÝCHOZÍ RELACE podle vybraného prostředí
+    # 3. Nastavení vzhledu podle vybraného prostředí (BEZ VYNUCENÍ RELACE)
     local GREETER_CONF="/etc/lightdm/lightdm-gtk-greeter.conf"
     mkdir -p /etc/lightdm/lightdm.conf.d
     
+    # Smazání zrádných souborů, kdyby tam zbyly z předchozích pokusů
+    rm -f /etc/lightdm/lightdm.conf.d/50-session.conf 2>/dev/null
+    
     if [ "$DESKTOP_ENV" == "PLASMA" ]; then
-        log "Aplikuji motiv Breeze pro SDDM a LightDM (KDE Plasma)..."
+        log "Aplikuji motiv Breeze pro LightDM (KDE Plasma)..."
         echo "[greeter]" > "$GREETER_CONF"
         echo "theme-name = Breeze" >> "$GREETER_CONF"
         echo "icon-theme-name = breeze" >> "$GREETER_CONF"
         echo "font-name = Noto Sans 10" >> "$GREETER_CONF"
         echo "background = /usr/share/backgrounds/wallpaper.png" >> "$GREETER_CONF"
         echo "indicators = ~host;~spacer;~clock;~spacer;~session;~power" >> "$GREETER_CONF"
-        
-        # Vynucení výchozí relace na Plasma Wayland pro manuální přihlášení
-        echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/50-session.conf
-        echo "user-session=plasmawayland" >> /etc/lightdm/lightdm.conf.d/50-session.conf
 
         log "Nastavuji jednotnou tapetu pro KDE Lockscreen..."
         run_as_user "kwriteconfig6 --file kscreenlockerrc --group Greeter --group Wallpaper --group org.kde.image --group General --key Image \"file:///usr/share/backgrounds/wallpaper.png\" 2>/dev/null || kwriteconfig5 --file kscreenlockerrc --group Greeter --group Wallpaper --group org.kde.image --group General --key Image \"file:///usr/share/backgrounds/wallpaper.png\" 2>/dev/null"
@@ -1912,31 +1911,31 @@ setup_display_manager() {
         log "Aplikuji výchozí modrý motiv pro LightDM (LXQt)..."
         echo "[greeter]" > "$GREETER_CONF"
         echo "background = /usr/share/backgrounds/wallpaper.png" >> "$GREETER_CONF"
-        
-        # Vynucení výchozí relace na LXQt pro manuální přihlášení
-        echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/50-session.conf
-        echo "user-session=lxqt" >> /etc/lightdm/lightdm.conf.d/50-session.conf
     fi
 
     # 4. Nastavení Autologinu
     if [ "$AUTOLOGIN_REQ" == "TRUE" ]; then
         log "Nastavuji automatické přihlášení pro uživatele $REAL_USER..."
         
-        # --- CHYBĚJÍCÍ PAM FIX PRO DEBIAN ---
-        # Vytvoření skupiny autologin a přidání uživatele, jinak to PAM blokne
+        # PAM Fix (Nezbytné pro Debian)
         groupadd -r autologin 2>/dev/null || true
         gpasswd -a "$REAL_USER" autologin
-        # ------------------------------------
         
         echo "[Seat:*]" > /etc/lightdm/lightdm.conf.d/autologin.conf
         echo "autologin-user=$REAL_USER" >> /etc/lightdm/lightdm.conf.d/autologin.conf
         echo "autologin-user-timeout=0" >> /etc/lightdm/lightdm.conf.d/autologin.conf
         
-        # Vynutí správnou relaci i pro automatické přihlášení
+        # DYNAMICKÉ NALEZENÍ RELACE (Fix pro schizofrenní Plasmu)
         if [ "$DESKTOP_ENV" == "PLASMA" ]; then
-            echo "autologin-session=plasmawayland" >> /etc/lightdm/lightdm.conf.d/autologin.conf
+            # Najde přesný název souboru (.desktop), který má Debian právě teď v sobě
+            PLASMA_SESSION=$(basename $(ls /usr/share/wayland-sessions/plasma*.desktop /usr/share/xsessions/plasma*.desktop 2>/dev/null | head -n 1) .desktop)
+            log "Detekována Plasma session: $PLASMA_SESSION"
+            
+            echo "autologin-session=$PLASMA_SESSION" >> /etc/lightdm/lightdm.conf.d/autologin.conf
+            echo "user-session=$PLASMA_SESSION" >> /etc/lightdm/lightdm.conf.d/autologin.conf
         else
             echo "autologin-session=lxqt" >> /etc/lightdm/lightdm.conf.d/autologin.conf
+            echo "user-session=lxqt" >> /etc/lightdm/lightdm.conf.d/autologin.conf
         fi
     fi
 }
